@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duygu Avcısı</title>
+<script src="/static/vendor/chart.umd.js"></script>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f3f0; --surface:#fcfcfb; --surface-2:#efeeea; --border:#dedcd6;
+  --text:#0b0b0b; --text-2:#52514e; --muted:#8a8984;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --pos:#2a78d6; --neg:#e34948; --warn:#eda100; --good:#1baf7a;
+  --cust:#fbe9df; --agent:#e3eefb; --sys:#eef6f1;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#121211; --surface:#1a1a19; --surface-2:#242422; --border:#33332f;
+    --text:#f0efec; --text-2:#c3c2b7; --muted:#8d8c84;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --pos:#3987e5; --neg:#e66767; --warn:#c98500; --good:#199e70;
+    --cust:#3a2519; --agent:#17283d; --sys:#16291f;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#121211; --surface:#1a1a19; --surface-2:#242422; --border:#33332f;
+  --text:#f0efec; --text-2:#c3c2b7; --muted:#8d8c84;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --pos:#3987e5; --neg:#e66767; --warn:#c98500; --good:#199e70;
+  --cust:#3a2519; --agent:#17283d; --sys:#16291f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:18px 20px 6px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline}
+h1{font-size:22px;margin:0}
+.sub{color:var(--text-2)}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--text-2)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border)}
+select,button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
+button{cursor:pointer}
+button.primary{background:var(--s1);color:#fff;border-color:transparent}
+button:disabled{opacity:.5;cursor:default}
+label.chk{display:flex;gap:6px;align-items:center;color:var(--text-2)}
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;padding:16px 20px}
+@media(max-width:1000px){main{grid-template-columns:1fr;padding:12px 16px}.bar,header{padding-left:16px;padding-right:16px}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.card h2{font-size:13px;margin:0 0 10px;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+#chat{height:calc(100vh - 210px);min-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:88%;padding:9px 12px;border-radius:12px}
+.msg .who{font-size:12px;color:var(--text-2);margin-bottom:2px;font-weight:600}
+.msg.musteri{background:var(--cust);align-self:flex-start;border-top-left-radius:3px}
+.msg.asistan{background:var(--agent);align-self:flex-end;border-top-right-radius:3px}
+.msg.sistem{background:var(--sys);align-self:center;font-size:12.5px;max-width:95%}
+.msg.playing{outline:2px solid var(--s1)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chip{font-size:11.5px;padding:1px 7px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--text-2)}
+.chip.hidden-truth{display:none;border-style:dashed}
+body.reveal .chip.hidden-truth{display:inline-block}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media(max-width:600px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.kpi .l{font-size:12px;color:var(--text-2)}
+.kpi .v{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+.kpi .h{font-size:12px;color:var(--muted)}
+.chartbox{position:relative;height:200px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--text-2);margin-bottom:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.legend .truth{display:none}
+body.reveal .legend .truth{display:inline}
+.brain{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.brain{grid-template-columns:1fr}}
+.brain h3{font-size:12.5px;margin:0 0 6px;color:var(--text-2)}
+.arm{display:grid;grid-template-columns:104px 1fr 44px;gap:6px;align-items:center;font-size:12.5px;padding:3px 4px;border-radius:6px}
+.arm.sel{background:var(--surface-2);font-weight:600}
+.track{position:relative;height:14px;background:var(--surface-2);border-radius:4px}
+.track .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
+.track .fill{position:absolute;top:2px;bottom:2px;border-radius:3px;transition:all .4s}
+.track .unc{position:absolute;top:6px;height:2px;background:var(--muted);opacity:.5;transition:all .4s}
+.track .truth{position:absolute;top:-3px;bottom:-3px;width:3px;border-radius:2px;background:var(--text);display:none;transition:left .4s}
+body.reveal .track .truth{display:block}
+.arm .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-2)}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+#thought{font-style:italic;min-height:20px}
+.why{font-size:12.5px;color:var(--text-2);margin-top:6px}
+.director{display:none;margin-top:8px;padding:6px 10px;border-radius:8px;border:1px solid var(--warn);font-size:12.5px}
+.feats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.outcome{padding:12px;border-radius:10px;text-align:center;font-weight:600;align-self:stretch}
+.outcome.kaldi{background:var(--sys);border:1px solid var(--good)}
+.outcome.ayrildi{background:var(--cust);border:1px solid var(--neg)}
+.trainrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.cmp{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
+@media(max-width:600px){.cmp{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.persona-card{font-size:12.5px;color:var(--text-2)}
+.empty{color:var(--muted);margin:auto;text-align:center;max-width:340px}
+.full{grid-column:1/-1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Duygu Avcısı</h1>
+  <span class="sub">Müşterinin sesinden öğrenip konuşmasını ona göre ayarlayan sesli asistan</span>
+  <span class="badge" id="modeBadge">…</span>
+</header>
+<div class="bar">
+  <select id="persona" aria-label="Müşteri"></select>
+  <label class="chk"><input type="checkbox" id="useAudio" checked> Gemini sesi (TTS + sesten duygu)</label>
+  <label class="chk"><input type="checkbox" id="playAudio" checked> Sesleri çal</label>
+  <button class="primary" id="startBtn">Görüşmeyi başlat</button>
+  <button id="pauseBtn" disabled>Duraklat</button>
+  <label class="chk"><input type="checkbox" id="reveal"> Gizli gerçeği göster</label>
+  <span style="flex-basis:100%;height:0"></span>
+  <select id="recSel" aria-label="Kayıtlı görüşmeler" style="max-width:420px"></select>
+  <button id="replayBtn" disabled title="Kayıtlı sesli görüşmeyi API kullanmadan tekrar oynat">Kayıtlı görüşmeyi oynat</button>
+</div>
+
+<main>
+  <section class="col">
+    <div class="card" style="padding-bottom:10px">
+      <h2>Görüşme</h2>
+      <div class="persona-card" id="personaCard"></div>
+      <div id="chat"><div class="empty">Bir müşteri seçip görüşmeyi başlat. Müşteriyi bir AI ajan oynar, çağrı merkezi asistanı ise onun duygusundan öğrenir.</div></div>
+    </div>
+  </section>
+
+  <section class="col">
+    <div class="kpis">
+      <div class="kpi"><div class="l">Algılanan duygu</div><div class="v" id="kVal">–</div><div class="h" id="kEmo">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Churn riski</div><div class="v" id="kChurn">–</div><div class="h" id="kChurnH">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Çözülen sorun</div><div class="v" id="kSolved">–</div><div class="h" id="kSolvedH">&nbsp;</div></div>
+      <div class="kpi"><div class="l">Son ödül</div><div class="v" id="kReward">–</div><div class="h" id="kRewardH">&nbsp;</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Duygu gidişatı</h2>
+      <div class="legend">
+        <span><i style="background:var(--s1)"></i>Asistanın algıladığı (ses + söz)</span>
+        <span class="truth"><i style="background:var(--s2)"></i>Müşterinin gerçek ruh hali (gizli)</span>
+      </div>
+      <div class="chartbox"><canvas id="moodChart" aria-label="Duygu grafiği"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>Avcının beyni: neye olumlu tepki veriyor?</h2>
+      <div class="brain">
+        <div><h3>Söylem stratejisi</h3><div id="brainS"></div></div>
+        <div><h3>Ses tonu</h3><div id="brainT"></div></div>
+      </div>
+      <div class="note">Çubuk: tahmini ödül (bu görüşme + benzer müşteriler). Gri çizgi: belirsizlik. <span class="truth-note">Siyah işaret: müşterinin gizli tercihi (yalnızca "gizli gerçek" açıkken).</span> Bağlam: <b id="ctx">–</b></div>
+    </div>
+
+    <div class="card">
+      <h2>İç ses</h2>
+      <div id="thought" class="sub">–</div>
+      <div class="why" id="why"></div>
+      <div class="director" id="director"></div>
+      <div class="feats" id="feats"></div>
+    </div>
+  </section>
+
+  <section class="card full">
+    <h2>Öğrenme kanıtı: öğrenen asistan ve rastgele asistan</h2>
+    <div class="trainrow">
+      <button id="trainBtn">60 görüşme simüle et</button>
+      <button id="resetBtn">Modeli sıfırla</button>
+      <span class="sub" style="font-size:12.5px">Hızlı simülasyon LLM kullanmaz: aynı müşterilerle yalnızca öğrenme algoritmasını, her turda rastgele strateji seçen bir asistanla karşılaştırır.</span>
+    </div>
+    <div class="cmp">
+      <div class="kpi"><div class="l">Müşteriyi tutma: öğrenen</div><div class="v" id="cL">–</div></div>
+      <div class="kpi"><div class="l">Müşteriyi tutma: rastgele</div><div class="v" id="cR">–</div></div>
+      <div class="kpi"><div class="l">Ort. son duygu: öğrenen</div><div class="v" id="mL">–</div></div>
+      <div class="kpi"><div class="l">Ort. son duygu: rastgele</div><div class="v" id="mR">–</div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>Öğrenen asistan</span>
+      <span><i style="background:var(--s2)"></i>Rastgele asistan</span>
+    </div>
+    <div class="chartbox"><canvas id="trainChart" aria-label="Eğitim grafiği"></canvas></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let INFO = null, CALL = null, paused = false, running = false;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+async function api(path, body){
+  const r = await fetch(path, {method: body === undefined ? 'GET' : 'POST',
+    headers: {'Content-Type':'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.hata || j.detail || r.statusText);
+  return j;
+}
+const fmt = v => (v>0?'+':'') + v.toFixed(2);
+
+// ---------------------------------------------------------------- grafikler
+let moodChart, trainChart;
+function baseOpts(ymin, ymax){
+  return {responsive:true, maintainAspectRatio:false, animation:{duration:300},
+    interaction:{mode:'index', intersect:false},
+    plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${fmt(c.parsed.y)}`}}},
+    scales:{x:{grid:{display:false}, ticks:{color:css('--muted')}},
+            y:{min:ymin, max:ymax, grid:{color:css('--border')}, ticks:{color:css('--muted')}}}};
+}
+function initCharts(){
+  moodChart = new Chart($('moodChart'), {type:'line', data:{labels:[], datasets:[
+    {label:'Algılanan', data:[], borderColor:css('--s1'), backgroundColor:css('--s1'), borderWidth:2, pointRadius:4, tension:.3},
+    {label:'Gerçek', data:[], borderColor:css('--s2'), backgroundColor:css('--s2'), borderWidth:2, borderDash:[5,4], pointRadius:3, tension:.3, hidden:true},
+  ]}, options: baseOpts(-1, 1)});
+  trainChart = new Chart($('trainChart'), {type:'line', data:{labels:[], datasets:[
+    {label:'Öğrenen', data:[], borderColor:css('--s1'), borderWidth:2, pointRadius:0, tension:.3},
+    {label:'Rastgele', data:[], borderColor:css('--s2'), borderWidth:2, pointRadius:0, tension:.3},
+  ]}, options: (()=>{const o=baseOpts(-1,1); o.scales.x.title={display:true,text:'görüşme #',color:css('--muted')};
+     o.scales.y.title={display:true,text:'son duygu (10 görüşmelik ort.)',color:css('--muted')}; return o;})()});
+}
+
+// ---------------------------------------------------------------- beyin çubukları
+function renderBrain(el, dim, snap, selected, truthMap){
+  const names = dim === 'strateji' ? INFO.stratejiler : INFO.tonlar;
+  const scale = 0.5; // ±0.5 ödül = tam genişlik
+  el.innerHTML = Object.keys(names).map(k => {
+    const s = snap ? snap[dim][k] : {tahmin:0, belirsizlik:0.18, gorusme_n:0, genel_n:0};
+    const m = Math.max(-scale, Math.min(scale, s.tahmin));
+    const w = Math.abs(m)/scale*50;
+    const left = m >= 0 ? 50 : 50 - w;
+    const u = Math.min(50, s.belirsizlik/scale*50);
+    const tr = truthMap ? truthMap[k] : null;
+    const trLeft = tr == null ? 50 : 50 + Math.max(-1,Math.min(1,tr/scale))*50;
+    return `<div class="arm ${k===selected?'sel':''}" title="Bu görüşmede ${s.gorusme_n} deneme, genelde ${s.genel_n} gözlem">
+      <span>${names[k]}</span>
+      <div class="track"><div class="zero"></div>
+        <div class="unc" style="left:${50+m/scale*50-u}%;width:${2*u}%"></div>
+        <div class="fill" style="left:${left}%;width:${w}%;background:${m>=0?css('--pos'):css('--neg')}"></div>
+        <div class="truth" style="left:calc(${trLeft}% - 1px)"></div></div>
+      <span class="num">${fmt(s.tahmin)}</span></div>`;
+  }).join('');
+}
+function brain(snap, sel){
+  const p = CALL ? INFO.personalar[CALL.persona] : null;
+  renderBrain($('brainS'), 'strateji', snap, sel && sel.strateji, p && p.tercih_strateji);
+  renderBrain($('brainT'), 'ton', snap, sel && sel.ton, p && p.tercih_ton);
+}
+
+// ---------------------------------------------------------------- sohbet
+function addMsg(cls, who, text, chips=[]){
+  const chat = $('chat');
+  if(chat.querySelector('.empty')) chat.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  d.innerHTML = (who?`<div class="who">${who}</div>`:'') + `<div>${text}</div>` +
+    (chips.length ? `<div class="chips">${chips.join('')}</div>` : '');
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+const chip = (t, hidden) => `<span class="chip ${hidden?'hidden-truth':''}">${t}</span>`;
+
+function speak(text, url, el, opts){
+  if(!$('playAudio').checked) return Promise.resolve();
+  el && el.classList.add('playing');
+  const done = () => el && el.classList.remove('playing');
+  if(url){
+    return new Promise(res => { const a = new Audio(url); a.onended = a.onerror = () => {done(); res();}; a.play().catch(()=>{done(); res();}); });
+  }
+  if(!('speechSynthesis' in window)) { done(); return Promise.resolve(); }
+  return new Promise(res => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'tr-TR'; u.rate = opts.rate || 1; u.pitch = opts.pitch || 1;
+    const v = speechSynthesis.getVoices().find(v => v.lang && v.lang.startsWith('tr'));
+    if(v) u.voice = v;
+    u.onend = u.onerror = () => {done(); res();};
+    speechSynthesis.speak(u);
+    setTimeout(()=>{done(); res();}, 2500 + text.length*90); // güvenlik zaman aşımı
+  });
+}
+
+function showCustomer(t){
+  const p = INFO.personalar[CALL.persona];
+  const el = addMsg('musteri', p.ad, t.metin, [
+    chip(`gerçek ruh hali: ${t.gercek_etiket} (${fmt(t.gercek_ruh_hali)})`, true),
+  ]);
+  CALL.lastCustEl = el;
+  const mood = t.gercek_ruh_hali;
+  return speak(t.metin, t.ses, el, {rate: mood < -0.4 ? 1.15 : 0.95, pitch: mood < -0.4 ? 0.9 : 1.05});
+}
+
+function showAnalysis(a){
+  const an = a.analiz;
+  // Müşteri mesajının altına asistanın algısı
+  if(CALL.lastCustEl){
+    const c = CALL.lastCustEl.querySelector('.chips') || (()=>{const d=document.createElement('div');d.className='chips';CALL.lastCustEl.appendChild(d);return d;})();
+    c.insertAdjacentHTML('afterbegin', chip(`algı: ${an.duygu} · valens ${fmt(an.valens)} · churn %${Math.round(an.churn_riski*100)} · ${an.kaynak}`));
+  }
+  $('kVal').textContent = fmt(an.valens);
+  $('kEmo').textContent = an.duygu;
+  $('kChurn').textContent = '%' + Math.round(an.churn_riski*100);
+  $('kChurnH').textContent = an.churn_riski >= .75 ? 'kritik' : an.churn_riski >= .4 ? 'orta' : 'düşük';
+  if(a.odul){ $('kReward').textContent = fmt(a.odul.odul);
+    $('kRewardH').textContent = `${INFO.stratejiler[a.odul.strateji]} + ${INFO.tonlar[a.odul.ton]}`; }
+  const f = an.akustik || {};
+  $('feats').innerHTML = [
+    an.ses_ipuclari ? chip('ses: ' + an.ses_ipuclari) : '',
+    f.enerji_db != null ? chip(`enerji ${f.enerji_db} dB`) : '',
+    f.perde_hz != null ? chip(`perde ${f.perde_hz} Hz`) : '',
+    f.konusma_hizi != null ? chip(`hız ${f.konusma_hizi} kelime/sn`) : '',
+    f.akustik_uyarilma != null ? chip(`akustik gerginlik ${f.akustik_uyarilma}`) : '',
+  ].join('');
+  const tl = a.zaman_cizelgesi;
+  moodChart.data.labels = tl.map(x => 'T' + x.tur);
+  moodChart.data.datasets[0].data = tl.map(x => x.algilanan);
+  moodChart.data.datasets[1].data = tl.map(x => x.gercek);
+  moodChart.update();
+  $('ctx').textContent = a.baglam || '–';
+}
+
+function showAgent(a){
+  CALL.solved = CALL.solved || 0;
+  const el = addMsg('asistan', 'Asistan Deniz', a.metin, [
+    chip('strateji: ' + a.strateji_ad), chip('ton: ' + a.ton_ad)]);
+  for(const x of a.araclar){
+    if(x.cozdu) CALL.solved++;
+    addMsg('sistem', '', `⚙ <b>${x.arac}</b>: ${x.sonuc}${x.cozdu ? ` <b>(çözüldü: ${x.cozdu})</b>` : ''}`);
+  }
+  const p = INFO.personalar[CALL.persona];
+  $('kSolved').textContent = `${CALL.solved}/${p.sorunlar.length}`;
+  $('kSolvedH').textContent = p.sorunlar.join(', ');
+  $('thought').textContent = '“' + a.ic_ses + '”';
+  $('why').innerHTML = `<b>${a.strateji_ad}</b>: ${a.neden.strateji}<br><b>${a.ton_ad}</b>: ${a.neden.ton}`;
+  const d = $('director'); d.style.display = a.yonetmen ? 'block' : 'none'; d.textContent = a.yonetmen ? '⚠ Yönetmen: ' + a.yonetmen : '';
+  CALL.lastSnap = a.beyin; CALL.lastSel = {strateji: a.strateji, ton: a.ton};
+  brain(a.beyin, CALL.lastSel);
+  return speak(a.metin, a.ses, el, {rate: a.rate, pitch: a.pitch});
+}
+
+const waitUnpaused = () => new Promise(res => { const t = () => paused ? setTimeout(t, 200) : res(); t(); });
+
+async function runCall(rec){
+  running = true; paused = false;
+  $('startBtn').disabled = true; $('replayBtn').disabled = true; $('pauseBtn').disabled = false; $('pauseBtn').textContent = 'Duraklat';
+  $('chat').innerHTML = ''; moodChart.data.labels = []; moodChart.data.datasets.forEach(d=>d.data=[]); moodChart.update();
+  ['kVal','kChurn','kSolved','kReward'].forEach(k=>$(k).textContent='–');
+  try{
+    addMsg('sistem','', 'Arama bağlanıyor…');
+    // rec verilirse: kayıtlı görüşme API kullanmadan aynı sırayla tekrar oynatılır
+    let i = 1;
+    const s = rec ? {id: null, persona: rec.persona, ses: rec.ses, tur: rec.events[0].data}
+                  : await api('/api/call/start', {persona: $('persona').value, ses: $('useAudio').checked});
+    const next = path => rec ? new Promise(r => setTimeout(() => r(rec.events[i++].data), 300)) : api(path, {});
+    CALL = {id: s.id, persona: s.persona, solved: 0};
+    $('chat').innerHTML = '';
+    const p = INFO.personalar[s.persona];
+    $('personaCard').innerHTML = `<b>${p.ad}</b>: ${p.ozet} <span class="chip">${s.ses ? 'sesli mod' : 'metin modu'}</span>${rec ? ' <span class="chip">kayıttan oynatılıyor</span>' : ''}`;
+    brain(null);
+    let play = showCustomer(s.tur);
+    while(true){
+      const ap = next(`/api/call/${CALL.id}/agent`);   // müşteri konuşurken asistan düşünmeye başlar
+      await play; await waitUnpaused();
+      const a = await ap;
+      showAnalysis(a);
+      if(a.bitti){
+        const ok = a.sonuc === 'kaldi';
+        addMsg('outcome ' + a.sonuc, '', ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)');
+        CALL.lastSnap = a.beyin; CALL.lastSel = null; brain(a.beyin);
+        break;
+      }
+      play = showAgent(a);
+      const cp = next(`/api/call/${CALL.id}/customer`);
+      await play; await waitUnpaused();
+      play = showCustomer(await cp);
+    }
+    loadRecordings();
+  }catch(e){
+    addMsg('sistem','', '⚠ Hata: ' + e.message);
+  }finally{
+    running = false; $('startBtn').disabled = false; $('replayBtn').disabled = !$('recSel').value; $('pauseBtn').disabled = true;
+  }
+}
+
+// ---------------------------------------------------------------- eğitim
+function rolling(arr, k=10){ return arr.map((_,i)=>{const s=arr.slice(Math.max(0,i-k+1),i+1); return +(s.reduce((a,b)=>a+b,0)/s.length).toFixed(3);}); }
+function showTrain(L, R){
+  const keep = xs => Math.round(100*xs.filter(x=>x.sonuc==='kaldi').length/xs.length) + '%';
+  const avg = xs => fmt(xs.reduce((a,x)=>a+x.son_ruh_hali,0)/xs.length);
+  $('cL').textContent = keep(L); $('cR').textContent = keep(R);
+  $('mL').textContent = avg(L); $('mR').textContent = avg(R);
+  trainChart.data.labels = L.map((_,i)=>i+1);
+  trainChart.data.datasets[0].data = rolling(L.map(x=>x.son_ruh_hali));
+  trainChart.data.datasets[1].data = rolling(R.map(x=>x.son_ruh_hali));
+  trainChart.update();
+}
+function fillRecordings(list){
+  const sonuc = {kaldi: 'kaldı', ayrildi: 'kayıp'};
+  $('recSel').innerHTML = list.length
+    ? list.map(r => `<option value="${r.id}">${r.ad} · ${r.tur} tur · ${sonuc[r.sonuc] || '?'}${r.ses ? ' · sesli' : ''} · ${new Date(r.zaman*1000).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</option>`).join('')
+    : '<option value="">(henüz kayıt yok)</option>';
+  $('replayBtn').disabled = !list.length || running;
+}
+async function loadRecordings(){ try{ fillRecordings(await api('/api/recordings')); }catch(e){} }
+
+$('trainBtn').onclick = async () => {
+  $('trainBtn').disabled = true;
+  try{ const r = await api('/api/train', {n: 60}); showTrain(r.ogrenen, r.rastgele); }
+  catch(e){ alert(e.message); } finally{ $('trainBtn').disabled = false; }
+};
+$('resetBtn').onclick = async () => { if(confirm('Genel model sıfırlansın mı?')){ await api('/api/reset', {}); brain(null); } };
+$('startBtn').onclick = () => runCall();
+$('replayBtn').onclick = async () => { const id = $('recSel').value; if(!id) return; runCall(await api('/api/recordings/' + id)); };
+$('pauseBtn').onclick = () => { paused = !paused; $('pauseBtn').textContent = paused ? 'Devam' : 'Duraklat'; };
+$('reveal').onchange = e => { document.body.classList.toggle('reveal', e.target.checked);
+  moodChart.data.datasets[1].hidden = !e.target.checked; moodChart.update(); brain(CALL && CALL.lastSnap, CALL && CALL.lastSel); };
+
+(async function init(){
+  initCharts();
+  INFO = await api('/api/info');
+  $('modeBadge').textContent = INFO.mod === 'gemini' ? `Gemini: ${INFO.metin_modeli} + ${INFO.tts_modeli}` : 'Demo modu (API anahtarı yok: tarayıcı sesi kullanılır)';
+  if(INFO.mod !== 'gemini'){ $('useAudio').checked = false; $('useAudio').disabled = true; }
+  $('persona').innerHTML = '<option value="rastgele">Rastgele müşteri</option>' +
+    Object.entries(INFO.personalar).map(([k,p]) => `<option value="${k}">${p.ad}: ${p.sorunlar.join(' + ')}</option>`).join('');
+  fillRecordings(INFO.kayitlar || []);
+  brain(null);
+  if('speechSynthesis' in window) speechSynthesis.getVoices();
+})();
+</script>
+</body>
+</html>
