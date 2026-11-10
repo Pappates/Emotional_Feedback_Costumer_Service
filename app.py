@@ -121,15 +121,21 @@ def recording(rid: str):
     f = REC_DIR / f"{rid}.json"
     if not f.exists():
         raise HTTPException(404, "Kayıt bulunamadı")
-    return json.loads(f.read_text(encoding="utf-8"))
+    report.ensure_from_recordings(REC_DIR)              # oynatılan kaydın raporu hazır olsun
+    rec = json.loads(f.read_text(encoding="utf-8"))
+    rec["rapor"] = f"/raporlar/{rid}"
+    return rec
 
 
 @app.get("/raporlar", response_class=HTMLResponse)
 def reports_index():
+    report.ensure_from_recordings(REC_DIR)
     return report.index_html()
 
 
 def _report_file(rid: str, name: str):
+    if rid.isalnum() and not (report.REPORT_DIR / rid / "rapor.html").exists() and (REC_DIR / f"{rid}.json").exists():
+        report.ensure_from_recordings(REC_DIR)          # kayıtlı görüşmenin raporu henüz yoksa üret
     f = report.REPORT_DIR / rid / name
     if not rid.isalnum() or not f.exists():
         raise HTTPException(404, "Rapor bulunamadı")

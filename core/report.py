@@ -302,7 +302,13 @@ def to_html(rep: dict) -> str:
         mu, a = t["musteri"], t["asistan"]
         b = mu.get("ruh_hali_bilesenleri")
         comp = ""
-        if b:
+        if b and b.get("eksik"):
+            comp = ('<table class="mini"><tbody>'
+                    f'<tr class="sum"><td>Toplam değişim</td><td class="num">{_f(b["toplam"], 3)}</td></tr>'
+                    f'<tr><td>Ruh hali</td><td class="num">{_f(b["onceki"])} → {_f(b["sonraki"])}</td></tr></tbody></table>'
+                    '<p class="note">Bu rapor kayıtlı görüşmeden üretildi; kayıtta değişimin bileşenleri '
+                    '(strateji/ton etkisi, bonuslar, gürültü) yalnızca toplam olarak tutuluyor.</p>')
+        elif b:
             parts = [("Strateji etkisi", b["strateji_etkisi"]), ("Ton etkisi", b["ton_etkisi"]),
                      ("Çözüm bonusu", b["cozum_bonusu"]), ("Kampanya etkisi", b["kampanya_etkisi"]),
                      ("Sabır cezası", b["sabir_cezasi"]), ("Gürültü", b["gurultu"])]
@@ -386,7 +392,7 @@ def to_html(rep: dict) -> str:
 <title>Duygu Raporu · {E(rep["musteri"])}</title><style>{CSS}</style></head><body><main>
 <p class="crumb"><a href="/raporlar">← Tüm raporlar</a> · <a href="/raporlar/{rep["id"]}/csv">CSV indir</a> · <a href="/raporlar/{rep["id"]}/json">JSON</a></p>
 <h1>Duygu analizi raporu: {E(rep["musteri"])}</h1>
-<p class="sub">{E(rep["ozet_profil"])}<br>Görüşme <code>{rep["id"]}</code> · {E(rep["tarih"].replace("T", " "))} · mod: {E(rep["mod"])}{" (sesli)" if rep["sesli"] else ""}
+<p class="sub">{E(rep["ozet_profil"])}<br>{"<b>Kayıtlı görüşmeden üretildi.</b> " if rep.get("kayittan") else ""}Görüşme <code>{rep["id"]}</code> · {E(rep["tarih"].replace("T", " "))} · mod: {E(rep["mod"])}{" (sesli)" if rep["sesli"] else ""}
  · bağlam: {E(rep["baglam"] or "–")} · {rep["asistan_turu"]} asistan turu · sonuç: <b class="{"ok" if rep["sonuc"] == "kaldi" else "bad"}">{SONUC.get(rep["sonuc"], rep["sonuc"])}</b>
  · çözülen: {len(rep["cozulen"])}/{len(rep["sorunlar"])} ({E(", ".join(rep["sorunlar"]))})</p>
 <div class="kpis">{kpis}</div>
@@ -438,14 +444,100 @@ ol.method li{margin-bottom:8px}code{font-size:12px;background:var(--surface-2);p
 
 # ======================================================================== kaydet / listele
 def save(c) -> Path:
-    rep = build(c)
-    d = REPORT_DIR / c.id
+    d = save_report_dict(build(c))
+    print(f"[rapor] kaydedildi: {d}", flush=True)
+    return d
+
+
+def from_recording(rec: dict, started_at: float) -> dict:
+    """Kayıtlı görüşmeden (data/kayitlar/<id>.json) rapor üretir: panelin aldığı tur verilerinden
+    rapor olaylarını yeniden kurar. Eksik olan tek şey gizli ruh hali değişiminin bileşenleridir."""
+    from types import SimpleNamespace
+
+    from .learner import REWARD_CLIP
+
+    issue_by_name = {v["ad"]: k for k, v in ISSUES.items()}
+    events, resolved = [], set()
+    prev_mood = prev_val = None
+    prev_solved = 0
+    last_brain, ctx, agent_turns = None, None, 0
+    for e in rec["events"]:
+        d = e["data"]
+        if e["tip"] == "musteri":
+            b = None
+            if d.get("ruh_hali_degisimi") is not None and prev_mood is not None:
+                b = {"eksik": True, "onceki": prev_mood, "toplam": d["ruh_hali_degisimi"], "sonraki": d["gercek_ruh_hali"],
+                     "kirpildi": False}
+                for k in ("strateji_etkisi", "ton_etkisi", "cozum_bonusu", "kampanya_etkisi", "sabir_cezasi", "gurultu"):
+                    b[k] = None
+            events.append({"tip": "musteri", "metin": d["metin"], "ses": d.get("ses"), "gercek_ruh_hali": d["gercek_ruh_hali"],
+                           "gercek_etiket": d.get("gercek_etiket", ""), "tts_tonu": d.get("tts_tonu", ""), "konu": None,
+                           "ruh_hali_bilesenleri": b, "bitti": d.get("bitti"), "sonuc": d.get("sonuc")})
+            prev_mood = d["gercek_ruh_hali"]
+            continue
+        an = d["analiz"]
+        v = float(an["valens"])
+        odul = None
+        if d.get("odul") and prev_val is not None:
+            raw = d["odul"]["odul"]
+            odul = {"strateji": d["odul"]["strateji"], "ton": d["odul"]["ton"], "onceki_valens": prev_val, "yeni_valens": v,
+                    "duygu_degisimi": round(v - prev_val, 4), "cozulen_sorun": prev_solved,
+                    "ilerleme_bonusu": round(0.15 * prev_solved, 4), "ham_odul": raw,
+                    "ogrenmeye_giren": round(max(-REWARD_CLIP, min(REWARD_CLIP, raw)), 4)}
+        ev = {"tip": "asistan", "algi": an, "gercek_ruh_hali": prev_mood, "algi_hatasi": round(v - prev_mood, 4),
+              "odul": odul, "baglam": d.get("baglam")}
+        ctx = d.get("baglam") or ctx
+        last_brain = d.get("beyin") or last_brain
+        if d.get("bitti"):
+            ev["beyin_son"] = d.get("beyin")
+        else:
+            agent_turns += 1
+            ev.update({"beyin_secim_oncesi": d.get("beyin"), "yonetmen": d.get("yonetmen"), "ses": d.get("ses"),
+                       "secim": {"strateji": d["strateji"], "ton": d["ton"], "ornekler": d.get("ornekler") or {"strateji": {}, "ton": {}},
+                                 "neden": d.get("neden") or {"strateji": "", "ton": ""}},
+                       "cevap": d.get("metin", ""), "ic_ses": d.get("ic_ses", ""), "araclar": d.get("araclar") or []})
+            prev_solved = 0
+            for x in d.get("araclar") or []:
+                if x.get("cozdu"):
+                    prev_solved += 1
+                    resolved.add(issue_by_name.get(x["cozdu"], x["cozdu"]))
+        events.append(ev)
+        prev_val = v
+
+    fake = SimpleNamespace(
+        id=rec["id"], events=events, persona_id=rec["persona"], started_at=started_at, mode=rec.get("mod", "gemini"),
+        audio=bool(rec.get("ses")), policy="ogrenen", outcome=rec.get("sonuc"), agent_turns=agent_turns,
+        resolved={r for r in resolved if r in ISSUES},
+        learner=SimpleNamespace(ctx=ctx, snapshot=lambda: last_brain),
+    )
+    rep = build(fake)
+    rep["kayittan"] = True
+    return rep
+
+
+def save_report_dict(rep: dict) -> Path:
+    d = REPORT_DIR / rep["id"]
     d.mkdir(parents=True, exist_ok=True)
     (d / "rapor.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     (d / "rapor.csv").write_text(to_csv(rep), encoding="utf-8")
     (d / "rapor.html").write_text(to_html(rep), encoding="utf-8")
-    print(f"[rapor] kaydedildi: {d}", flush=True)
     return d
+
+
+def ensure_from_recordings(rec_dir: Path) -> int:
+    """Raporu olmayan kayıtlı görüşmeler için rapor üretir. Üretilen rapor sayısını döner."""
+    n = 0
+    for f in rec_dir.glob("*.json"):
+        if (REPORT_DIR / f.stem / "rapor.html").exists():
+            continue
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+            save_report_dict(from_recording(rec, f.stat().st_mtime))
+            n += 1
+            print(f"[rapor] kayıtlı görüşmeden üretildi: {REPORT_DIR / f.stem}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[rapor] {f.name} için rapor üretilemedi: {e}", flush=True)
+    return n
 
 
 def list_reports() -> list[dict]:
@@ -505,5 +597,6 @@ def index_html() -> str:
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Duygu Raporları</title><style>{CSS}</style></head><body><main>
 <p class="crumb"><a href="/">← Panele dön</a></p><h1>Duygu analizi raporları</h1>
-<p class="sub">Her görüşme bittiğinde ayrıntılı rapor otomatik oluşturulur (data/raporlar/). Hızlı simülasyon görüşmeleri rapora girmez.</p>
+<p class="sub">Her görüşme bittiğinde ayrıntılı rapor otomatik oluşturulur (data/raporlar/). Kayıtlı görüşmelerin raporları da
+otomatik üretilir. Hızlı simülasyon görüşmeleri rapora girmez.</p>
 {agg}<section class="card"><h2>Görüşmeler</h2>{body}</section></main></body></html>"""
