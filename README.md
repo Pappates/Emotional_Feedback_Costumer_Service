@@ -138,6 +138,9 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | Uzun "iç ses" JSON'u yarıda kesiyor; satır sonu JSON'u bozuyor | Uzunluk sınırlı şema, hata toleranslı okuma, iki deneme |
 | Araç adını müşteriye okuma ("fatura_incele_iade aracını..."), Kiril harfleri ("Haklıсыз"), "(İşlem sonucu: ...)" notunu okuma | Cevap temizleme |
 | Metin duygu modeli karışık mesajlarda ±1'e doyuyor | Cümle cümle puanlama + ölçek daraltma: MAE 0,63 → 0,30 |
+| Asistan uydurma söz veriyor ("faturanız iptal edildi", "para yarın 10:00'da hesabınızda") | İşlemlerin gerçek sonuçları "şirket kuralları" olarak asistana önceden veriliyor; uydurma tarih/saat/tutar yasak |
+| Asistan "işlemi tamamladım" deyip aracı çağırmıyor | Lokal modda asistanın kendi algıladığı konuyu çözen araç yönergede açıkça söyleniyor; "sil/kaldır/düzelt" gibi fiiller de metinden işlem çıkarımına eklendi |
+| Ses duygu modeli öfkeli Türkçe müşteriyi %80-95 "mutlu" sınıflıyor, algıyı yukarı çekiyor (ortalama sapma +0,20) | Ses modelinin valensteki payı %40 → %10 (`LOKAL_SES_VALENS_AGIRLIK`); uyarılmışlıkta kullanılmaya devam ediyor |
 
 Bu önlemlerden sonra gerçek `gemma3:4b` ile yapılan testte iki görüşme de **müşteriyi tutarak ve iki sorunu da
 çözerek** bitti (Zeynep Hanım: algı −0,38 → +0,26, gerçek −0,55 → +0,04; Ahmet Bey: algı −0,33 → +0,38,
@@ -150,7 +153,7 @@ gerçek −0,75 → +0,38).
 * **Hız:** 4 çekirdekli test makinesinde LLM cevabı ~20 sn, tur başına (asistan + müşteri) ~35-45 sn.
   Demo için "Sesleri çal" kapalı metin modu ve önceden kaydedilmiş görüşmeler önerilir.
 * **Ses duygu modeli** İngilizce oyunculu konuşmayla eğitilmiş; Türkçe öfkeli müşteriyi "mutlu" (%59) sınıfladı.
-  Bu yüzden füzyonda ağırlığı düşük (valensin %40'ı). Türkçe duygulu konuşma verisiyle ince ayar gerekiyor.
+  Bu yüzden füzyonda ağırlığı düşük (valensin %10'u). Türkçe duygulu konuşma verisiyle ince ayar gerekiyor.
 * **Piper'da tek Türkçe ses** var; konuşmacılar perde farkıyla ayrılıyor ve ses duyguyu gerçekten taşımıyor
   (yalnızca hız ve ses yüksekliği değişiyor). Duygulu ve farklı sesler için XTTS veya Chatterbox gibi bir model gerekir.
 * Churn niyeti ve konu şimdilik anahtar kelime kurallarıyla bulunuyor.

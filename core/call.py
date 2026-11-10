@@ -93,7 +93,7 @@ TOOL_HINTS = {  # lokal modda model aracı çağırmayı unutup "açıyorum" der
     # Desenler Türkçe karaktersiz yazılır; metin de karaktersizleştirilip aranır ("ariza" = "arıza")
     "ariza_kaydi_ac": r"ariza (kayd|bildirim)",
     "teknisyen_randevusu": r"teknisyen|randevu|saha ekib",
-    "fatura_incele_iade": r"\biade|fatura\w* (incel|duzelt)|tutar\w* (duzelt|geri)",
+    "fatura_incele_iade": r"\biade|(fatura|ucret|paket|tutar)\w*[^.!?]{0,40}(sil|kaldir|duzelt|incele|iptal|geri)",
     "nakil_islemi": r"nakil|nakl|tasima islem|yeni adres",
     "hat_optimizasyonu": r"hat test|optimiz|port\w* (ayar|yenile|sifirla)",
     "kampanya_tanimla": r"kampanya|indirim|hediye|telafi",
@@ -105,6 +105,11 @@ def ascii_tr(s: str) -> str:
     return (s or "").translate(_ASCII).lower()
 
 
+# Asistanın uydurma söz vermemesi için işlemlerin gerçek sonuçları (TOOLS içindeki sonuç metinleriyle tutarlı)
+COMPANY_FACTS = ("Arıza kaydı açılınca saha ekibi 4 saat içinde müdahale eder. Teknisyen randevusu bugün 16:00-18:00 "
+                 "arasıdır. Hat iyileştirmesi uzaktan yapılır ve hız 100 Mbps profiline ayarlanır. Fatura incelemesinde "
+                 "hatalı 240 TL bir sonraki faturaya iade olarak yansır. Nakil talebinde yeni adreste hat 2 iş günü "
+                 "içinde aktif olur. Telafi kampanyası 1 ay %30 indirim ve 50 GB ek internettir.")
 TOOL_SPOKEN = {"ariza_kaydi_ac": "arıza kaydı", "teknisyen_randevusu": "teknisyen randevusu",
                "hat_optimizasyonu": "hat iyileştirmesi", "fatura_incele_iade": "fatura incelemesi",
                "nakil_islemi": "nakil işlemi", "kampanya_tanimla": "telafi kampanyası"}
@@ -124,9 +129,11 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     t = re.sub(r"\[[^\]]{1,25}\]|\{[^}]{1,25}\}", "", t)          # "[adres]", "{mesaj}" gibi şablon kalıntıları
     t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*\)", "", t, flags=re.I)  # geçmişteki notları okumasın
     t = t.translate(_CYRILLIC)                                       # "Haklıсыз" gibi karışan Kiril harfleri
+    t = re.sub(r"\byox\b", "yok", t)                                # Azerice karışması
+    t = re.sub(r"\s+lan\b", "", t, flags=re.I)                      # argo
     t = re.sub(r"[\u3000-\u9fff\uac00-\ud7af\u0600-\u06ff]+", "", t)  # araya karışan Çince/Korece/Arapça karakterler
     t = re.sub(r"[”\"'}{\]\[]{2,}", "", t)                          # '”}”}”}' gibi JSON kalıntıları
-    t = re.sub(r"[”\"]+$", "", t.strip())
+    t = re.sub(r"[”“\"]", "", t.strip())                              # telefonda tırnak okunmaz; kalıntıları at
     t = re.sub(r"\s+([,.!?])", r"\1", t)
     t = re.sub(r"\s+", " ", t).strip().strip('"').strip()
     sents = re.split(r"(?<=[.!?…])\s+", t)
@@ -134,7 +141,10 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     for s_ in sents:   # aynı cümleyi tekrar etme
         if s_ and s_ not in out:
             out.append(s_)
-    t = " ".join(out[:max_sentences])
+    out = out[:max_sentences]
+    if len(out) > 1 and not re.search(r"[.!?…]$", out[-1]):   # uzunluk sınırında yarıda kesilmiş son cümle
+        out = out[:-1]
+    t = " ".join(out)
     return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
 
 
@@ -327,10 +337,11 @@ class Call:
             system = (f"Bir telekom şirketinin çağrı merkezini arayan müşteri {self.p['ad']}'sin. {self.p['ozet']} "
                       f"Konuşma tarzın şöyle: {self.p['karakter']} Telefonda konuşur gibi doğal, günlük Türkçe kullan. "
                       "ÖNEMLİ: Sen MÜŞTERİSİN, temsilci değilsin. Temsilcinin cümlelerini tekrarlama; 'size nasıl "
-                      "yardımcı olabilirim' gibi temsilci cümleleri kurma. Karakter tarifini değil, söyleyeceğin sözleri yaz.")
+                      "yardımcı olabilirim' gibi temsilci cümleleri kurma. Karakter tarifini değil, söyleyeceğin sözleri yaz. "
+                      "Kızgın olsan bile küfür ya da 'lan' gibi argo kullanma.")
             if not self.history:   # ilk tur: küçük model karakter tanımını tekrar etmesin, gerçekten aradığını bilsin
-                yon = ("Temsilci telefonu açtı ve 'Merhaba, ben Deniz, size nasıl yardımcı olabilirim?' dedi. "
-                       "Ona kendi sorununu anlat.")
+                yon = ("Çağrı merkezi telefonu açtı ve 'Merhaba, size nasıl yardımcı olabilirim?' dedi. "
+                       "Kendi adını kullanarak (ya da hiç ad vermeden) sorununu anlat.")
             prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {yon} {gorev} "
                       f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}. "
                       "Müşteri olarak 1-3 kısa cümleyle cevap ver.")
@@ -525,7 +536,9 @@ class Call:
             "Nihai amacın müşterinin sorununu GERÇEKTEN çözmek ve onu memnun etmek. Telefonda konuşuyorsun: "
             "kısa, doğal, akıcı Türkçe kullan (Türkçe karakterleri ç, ğ, ı, ö, ş, ü doğru yaz). Madde işareti, emoji, parantez kullanma. "
             "Yalnızca müşterinin dile getirdiği sorunlar için araç çalıştır; gereksiz araç kullanma, "
-            "aynı işlemi iki kez yapma. Araç çalıştırdıysan sonucunu cevabında kısaca belirt."
+            "aynı işlemi iki kez yapma. Araç çalıştırdıysan sonucunu cevabında kısaca belirt. "
+            "ŞİRKET KURALLARI (işlemlerin gerçek sonuçları; bunların dışında tarih, saat, tutar ya da söz UYDURMA): "
+            + COMPANY_FACTS + " Bir işlemi yapmadan 'yaptım' deme; faturayı iptal etmek ya da para iadesini hesaba yatırmak mümkün değil."
         )
         prompt = (
             f"BU TURDAKİ SÖYLEM STRATEJİN: {STRATEGIES[s]['ad']} -> {STRATEGIES[s]['talimat']}\n"
@@ -538,11 +551,17 @@ class Call:
             f"Daha önce yapılan işlemler: {'; '.join(done) or 'yok'}\n\n"
             f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver."
         )
+        tool_hint = ""
+        if self.mode == "lokal" and an.get("konu") in ISSUES:
+            # Küçük model işlemi "yaptım" deyip aracı çağırmıyordu: asistanın KENDİ algıladığı konuyu çözen aracı açıkça söyle
+            konu = an["konu"]
+            tool_hint = (f" Müşterinin şu anki konusu: {ISSUES[konu]['ad']}. Bunu gerçekten çözmek için 'araclar' listesine "
+                         f"{' ya da '.join(ISSUES[konu]['cozen'])} yaz; listeye yazmadığın işlemi 'yaptım' diye söyleme.")
         if self.mode == "lokal":
             system += " Araç adlarını (ör. ariza_kaydi_ac) müşteriye söyleme; yaptığın işlemi doğal cümleyle anlat."
             prompt = prompt.replace(f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver.",
                                     "[YÖNERGE] Müşterinin son mesajına temsilci olarak cevap ver. Müşterinin cümlelerini "
-                                    "tekrarlama, aynı cümleyi iki kez kurma, en fazla 3 kısa cümle kullan.")
+                                    "tekrarlama, aynı cümleyi iki kez kurma, en fazla 3 kısa cümle kullan." + tool_hint)
             hist = self._chat_history("asistan")
         else:
             hist = None
@@ -569,7 +588,11 @@ class Call:
         else:
             out = out or {"ic_ses": "", "araclar": []}
             out["cevap"] = MOCK_AGENT[s]
-        if len(out.get("ic_ses", "")) < 10 or _similar(out["ic_ses"], out["cevap"]) > 0.7:
+        out["ic_ses"] = clean_utterance(out.get("ic_ses", ""), max_sentences=2)
+        cues = f"{an.get('ses_ipuclari', '')} {an.get('metin_ipuclari', '')}".lower()
+        if (len(out.get("ic_ses", "").split()) < 4 or _similar(out["ic_ses"], out["cevap"]) > 0.7
+                or out["ic_ses"].strip().lower() in cues
+                or "son mesajına temsilci olarak" in out["ic_ses"] or "YÖNERGE" in out["ic_ses"]):   # yönerge sızması
             out["ic_ses"] = f"{STRATEGIES[s]['ad']} stratejisini uyguluyorum."
         out["metinden_araclar"] = []
         if self.mode == "lokal" and out["araclar"]:

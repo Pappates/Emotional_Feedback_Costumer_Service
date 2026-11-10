@@ -226,7 +226,7 @@ def _svg_churn(rep) -> str:
     return f'<svg viewBox="0 0 {W} {H}" class="chart" role="img" aria-label="Churn riski">{grid}{bars}</svg>'
 
 
-METHOD = """
+METHOD_GEMINI = """
 <ol class="method">
 <li><b>Ses → metin + duygu (Gemini, ses anlama).</b> Müşterinin ses kaydı doğrudan Gemini'ye verilir. Model hem dökümü çıkarır
 hem de <i>sözlere</i> ve <i>ses tonuna</i> (hız, yükseklik, gerginlik, iç çekme) bakarak şunları döner: duygu etiketi,
@@ -237,6 +237,33 @@ perde dalgalanması (std/ort) ve konuşma hızı (kelime / sesli süre) ölçül
 <code>0,4·enerji + 0,3·hız + 0,3·perde dalgalanması</code> (her biri 0–1'e ölçeklenir).</li>
 <li><b>Füzyon.</b> Valens Gemini'den alınır (söz + ton birlikte değerlendirildiği için). Uyarılmışlık iki kanalın ağırlıklı ortalamasıdır:
 <code>uyarılma = 0,6·Gemini + 0,4·akustik</code>.</li>
+<li><b>Ödül.</b> Asistanın bir önceki hamlesi (strateji + ton) şöyle puanlanır:
+<code>ödül = (yeni valens − önceki valens) + 0,15 × (o hamlede çözülen sorun sayısı)</code>.
+Tek bir gürültülü ölçümün öğrenmeyi ele geçirmemesi için ödül öğrenmeye <code>[−0,5, +0,5]</code> aralığına kırpılarak girer.</li>
+<li><b>Öğrenme (Thompson Sampling, iki seviyeli).</b> Her strateji ve ton için ortalama ödül tahmini tutulur.
+Görüşme içi gözlemler 2 kat ağırlıklıdır; benzer bağlamdaki (konu · gerilim) genel bilgi en fazla 6 gözlem ağırlığında ön bilgi olarak girer;
+eski genel gözlemler her güncellemede %3 unutulur. Her turda her kol için <code>N(tahmin, σ/√n)</code> dağılımından bir örnek çekilir,
+en yüksek örnek seçilir (σ = 0,25). Böylece az denenen kollar da arada denenir (keşif).</li>
+<li><b>Yönetmen.</b> Churn riski üst üste 2 tur %75'in üzerindeyse asistana "müşteri kaçmak üzere" uyarısı geçer.</li>
+<li><b>Simülasyonun gizli gerçeği (yalnızca test için).</b> Müşteri ajanının ruh hali her turda
+<code>strateji etkisi + ton etkisi + 0,15×çözülen sorun + kampanya etkisi − sabır cezası + gürültü</code> kadar değişir.
+Asistan bu tabloyu görmez; bu rapor, asistanın algısının bu gerçeğe ne kadar yaklaştığını ölçmek için onu da gösterir.</li>
+</ol>"""
+
+
+METHOD_LOKAL = """
+<ol class="method">
+<li><b>Ses → metin (faster-whisper, yerel).</b> Müşterinin ses kaydı bilgisayarda Whisper ile Türkçe metne çevrilir.</li>
+<li><b>Metinden duygu (Türkçe BERT, yerel).</b> Mesaj cümlelere ve "ama/ancak/fakat" öncesine bölünür, her parça ayrı puanlanır
+(olumlu olasılığı − olumsuz olasılığı), ortalanır ve ×0,6 ile ölçeklenir. Üzerine kelime ipuçları eklenir
+(olumlu kelime başına +0,08, olumsuz kelime başına −0,08).</li>
+<li><b>Sesten duygu (wav2vec2, yerel).</b> Model öfke / mutluluk / üzüntü / nötr olasılıkları verir; bunlar valens ve uyarılmışlığa
+çevrilir. Model İngilizce oyunculu konuşmayla eğitildiği için Türkçede güvenilir değildir; bu yüzden valense yalnızca %10 katılır.</li>
+<li><b>Akustik özellikler (yerel, numpy).</b> 40 ms'lik pencerelerde enerji (RMS → dB), otokorelasyonla perde (70–400 Hz),
+perde dalgalanması ve konuşma hızı ölçülür; <code>0,4·enerji + 0,3·hız + 0,3·perde dalgalanması</code> ile akustik gerginlik çıkar.</li>
+<li><b>Füzyon.</b> <code>valens = 0,9·metin + 0,1·ses modeli</code>, <code>uyarılma = 0,5·ses modeli + 0,5·akustik</code>,
+<code>churn = sigmoid(−3·(valens + 0,2))</code>; "iptal", "başka operatöre geçeceğim" gibi açık ayrılma ifadesi varsa en az 0,85.
+Konu ve ayrılma niyeti Türkçe anahtar kelime kurallarıyla bulunur.</li>
 <li><b>Ödül.</b> Asistanın bir önceki hamlesi (strateji + ton) şöyle puanlanır:
 <code>ödül = (yeni valens − önceki valens) + 0,15 × (o hamlede çözülen sorun sayısı)</code>.
 Tek bir gürültülü ölçümün öğrenmeyi ele geçirmemesi için ödül öğrenmeye <code>[−0,5, +0,5]</code> aralığına kırpılarak girer.</li>
@@ -403,7 +430,7 @@ def to_html(rep: dict) -> str:
 {_svg_mood(rep)}<h2 style="margin-top:14px">Algılanan churn riski</h2>{_svg_churn(rep)}
 <p class="note">Strateji kullanımı: {usage}<br>Ton kullanımı: {usage_t}</p></section>
 <section class="card"><h2>Öğrenilen tercihler ve gizli tercihler</h2>{lv}</section>
-<section class="card"><h2>Yöntem: duygu değişimini nasıl analiz ediyoruz?</h2>{METHOD}</section>
+<section class="card"><h2>Yöntem: duygu değişimini nasıl analiz ediyoruz?</h2>{METHOD_LOKAL if rep["mod"] == "lokal" else METHOD_GEMINI}</section>
 <h2 class="sect">Tur tur ayrıntı</h2>{tblocks}
 </main></body></html>"""
 

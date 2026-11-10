@@ -202,6 +202,10 @@ def speech_emotion(wav_bytes: bytes) -> dict:
 
 # ============================================================ metinden duygu, churn, konu
 SENT_SCALE = float(os.getenv("LOKAL_METIN_OLCEK", "0.6"))
+# İngilizce oyunculu konuşmayla eğitilmiş ses duygu modeli, Türkçe öfkeli müşteriyi %80-95 "mutlu" sınıflıyor ve
+# valensi yukarı çekiyordu (gerçek kullanıcı raporunda ortalama sapma +0,20). Valensteki payı %40'tan %10'a indirildi;
+# uyarılmışlıkta (sesin gerginliği) kullanılmaya devam ediyor. Türkçe veriyle eğitilince artırılabilir.
+SER_VALENCE_WEIGHT = float(os.getenv("LOKAL_SES_VALENS_AGIRLIK", "0.1"))
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -282,14 +286,14 @@ def _voice_cues(feats: dict, ser: dict | None) -> str:
 
 def analyze(text: str, wav_bytes: bytes | None, acoustic: dict | None) -> dict:
     """Gemini analiziyle aynı alanları üretir. Füzyon:
-       valens    = 0,6 × metin duygu modeli + 0,4 × ses duygu modeli (ses yoksa yalnızca metin) + kelime ipuçları
+       valens    = 0,9 × metin duygu modeli + 0,1 × ses duygu modeli (ses yoksa yalnızca metin) + kelime ipuçları
        uyarılma  = 0,5 × ses duygu modeli + 0,5 × akustik gerginlik
        churn     = sigmoid(−3·(valens + 0,2)); açık ayrılma ifadesi varsa en az 0,85"""
     tx = text_sentiment(text)
     cues = text_cues(text)
     ser = speech_emotion(wav_bytes) if wav_bytes else None
     v_text = tx["valens"] + 0.08 * len(cues["olumlu"]) - 0.08 * len(cues["olumsuz"])
-    v = 0.6 * v_text + 0.4 * ser["valens"] if ser else v_text
+    v = (1 - SER_VALENCE_WEIGHT) * v_text + SER_VALENCE_WEIGHT * ser["valens"] if ser else v_text
     v = float(np.clip(v, -1, 1))
     ac = (acoustic or {}).get("akustik_uyarilma")
     if ser and ac is not None:
