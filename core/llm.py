@@ -74,18 +74,19 @@ def _missing_turkish(obj: BaseModel, fields) -> bool:
 
 
 def generate_json(system: str, prompt: str, schema: type[BaseModel], audio_wav: bytes | None = None,
-                  temperature: float = 0.7, tr_fields: tuple[str, ...] = ()) -> BaseModel:
+                  temperature: float = 0.7, tr_fields: tuple[str, ...] = (),
+                  history: list[dict] | None = None) -> BaseModel:
     """tr_fields: Türkçe karakter içermesi gereken alanlar. Hafif modeller bazen Türkçe karakterleri
     atlıyor ("yasadiginiz"); öyle olursa önce aynı, sonra başka bir modelle yeniden üretilir."""
     if config.PROVIDER == "lokal":
         from . import local
-        r = local.chat_json(system, prompt, schema, temperature)
+        r = local.chat_json(system, prompt, schema, temperature, history)
         for attempt in range(2):
             if not tr_fields or not _missing_turkish(r, tr_fields):
                 break
             print(f"[lokal] {local.LLM_MODEL} Türkçe karaktersiz yazdı, yeniden üretiliyor ({attempt + 1}/2)…", flush=True)
             r = local.chat_json(system, prompt + "\n\nDİKKAT: Türkçe karakterleri (ç, ğ, ı, ö, ş, ü, İ) mutlaka doğru kullan.",
-                                schema, max(0.2, temperature - 0.2 * (attempt + 1)))
+                                schema, max(0.2, temperature - 0.2 * (attempt + 1)), history)
         return r
 
     from google.genai import types

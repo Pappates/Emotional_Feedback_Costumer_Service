@@ -28,9 +28,21 @@ TOOL_NAMES = tuple(TOOLS)
 
 
 class AgentReply(BaseModel):
+    # Sıra bilinçli: önce düşün, sonra işlem kararı ver, en son konuş (küçük modellerde tutarlılığı artırıyor)
     ic_ses: str = Field(description="Kısa iç ses: müşteri hakkında ne düşünüyorsun, neden bu şekilde cevap veriyorsun (1 cümle)")
-    cevap: str = Field(description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 3 kısa cümle)")
     araclar: list[Literal[TOOL_NAMES]] = Field(default_factory=list, description="Bu turda çalıştırılacak araçlar (0-2)")
+    cevap: str = Field(description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 3 kısa cümle)")
+
+
+class LocalAgentReply(BaseModel):
+    """Lokal (küçük) model için aynı şema, uzunluk sınırlı: uzun 'iç ses' JSON'u yarıda kesiyordu."""
+    ic_ses: str = Field(max_length=150, description="Tek kısa cümle: neden böyle cevap veriyorsun")
+    araclar: list[Literal[TOOL_NAMES]] = Field(default_factory=list, max_length=2, description="Çalıştırılacak araçlar (0-2)")
+    cevap: str = Field(max_length=330, description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 3 kısa cümle)")
+
+
+class LocalCustomerReply(BaseModel):
+    konusma: str = Field(max_length=300, description="Müşterinin söyleyeceği 1-3 kısa Türkçe cümle")
 
 
 class CustomerReply(BaseModel):
@@ -71,6 +83,61 @@ MOCK_AGENT = {
 }
 # Demo modunda asistanın bir turda sorunu çözme olasılığı (stratejiye göre)
 MOCK_RESOLVE_P = {"cozum_odakli": 0.55, "teknik_aciklama": 0.5, "dinle_sor": 0.4, "empati": 0.35, "telafi_teklifi": 0.3}
+
+
+# ---------------------------------------------------------------- küçük model korumaları
+AGENT_PHRASES = ["size nasıl yardımcı", "yardımcı olabilirim", "yardımcı olmak istiyorum", "yardımcı olabilecek",
+                 "kaydı açacağım", "kaydınızı açıyorum", "randevu oluşturacağım", "iade ediyorum", "değerli müşterimiz",
+                 "müşterilerimiz", "temsilciniz", "size en uygun çözüm"]
+TOOL_HINTS = {  # lokal modda model aracı çağırmayı unutup "açıyorum" derse, cevaptan işlemi çıkar
+    # Desenler Türkçe karaktersiz yazılır; metin de karaktersizleştirilip aranır ("ariza" = "arıza")
+    "ariza_kaydi_ac": r"ariza (kayd|bildirim)",
+    "teknisyen_randevusu": r"teknisyen|randevu|saha ekib",
+    "fatura_incele_iade": r"\biade|fatura\w* (incel|duzelt)|tutar\w* (duzelt|geri)",
+    "nakil_islemi": r"nakil|nakl|tasima islem|yeni adres",
+    "hat_optimizasyonu": r"hat test|optimiz|port\w* (ayar|yenile|sifirla)",
+    "kampanya_tanimla": r"kampanya|indirim|hediye|telafi",
+}
+_ASCII = str.maketrans("ıİşŞğĞüÜöÖçÇâÂ", "iissgguuoocc" + "aa")
+
+
+def ascii_tr(s: str) -> str:
+    return (s or "").translate(_ASCII).lower()
+
+
+TOOL_SPOKEN = {"ariza_kaydi_ac": "arıza kaydı", "teknisyen_randevusu": "teknisyen randevusu",
+               "hat_optimizasyonu": "hat iyileştirmesi", "fatura_incele_iade": "fatura incelemesi",
+               "nakil_islemi": "nakil işlemi", "kampanya_tanimla": "telafi kampanyası"}
+
+
+# Küçük modeller Türkçe hecelerin yerine okunuşu aynı Kiril harflerini koyabiliyor ("Haklıсыз" = "Haklısız")
+_CYRILLIC = str.maketrans({**dict(zip("абвгдежзийклмнопрстуфхцчшыэюяі", "abvgdejziyklmnoprstufhcçşıeüai")),
+                           **dict(zip("АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЫЭЮЯІ", "ABVGDEJZİYKLMNOPRSTUFHCÇŞIEÜAI"))})
+
+
+def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> str:
+    """Model çıktısını telefon konuşmasına uygun hale getirir: '#1,' gibi kalıntılar, satır sonları, aşırı uzunluk,
+    müşteriye okunan araç adları ('fatura_incele_iade aracını kullanacağım')."""
+    t = re.sub(r"^\s*#\d+\s*[,.:-]?\s*", "", text or "")
+    for k, v in TOOL_SPOKEN.items():
+        t = re.sub(rf"`?{k}`?(\s+aracını)?", v, t)
+    t = re.sub(r"\[[^\]]{1,25}\]|\{[^}]{1,25}\}", "", t)          # "[adres]", "{mesaj}" gibi şablon kalıntıları
+    t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*\)", "", t, flags=re.I)  # geçmişteki notları okumasın
+    t = t.translate(_CYRILLIC)                                       # "Haklıсыз" gibi karışan Kiril harfleri
+    t = re.sub(r"\s+([,.!?])", r"\1", t)
+    t = re.sub(r"\s+", " ", t).strip().strip('"').strip()
+    sents = re.split(r"(?<=[.!?…])\s+", t)
+    out = []
+    for s_ in sents:   # aynı cümleyi tekrar etme
+        if s_ and s_ not in out:
+            out.append(s_)
+    t = " ".join(out[:max_sentences])
+    return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
+
+
+def _similar(a: str, b: str) -> float:
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, (a or "").lower(), (b or "").lower()).ratio()
 
 
 class Call:
@@ -193,6 +260,7 @@ class Call:
             "tip": "musteri", "metin": text, "ses": url, "gercek_ruh_hali": round(self.mood, 4),
             "gercek_etiket": mood_label(self.mood), "tts_tonu": mood_delivery(self.mood),
             "konu": self.current_issue, "ruh_hali_bilesenleri": bilesen, "bitti": self.ended, "sonuc": self.outcome,
+            "yedek_cumle": getattr(self, "_customer_fallback", False),
         })
         return {
             "rol": "musteri", "metin": text, "ses": url, "bitti": self.ended, "sonuc": self.outcome,
@@ -248,8 +316,63 @@ class Call:
             f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}.\n\n"
             f"Görüşme şu ana kadar:\n{self._transcript() or '(henüz başlamadı)'}\n\n1-3 cümleyle cevap ver."
         )
-        r: CustomerReply = llm.generate_json(system, prompt, CustomerReply, temperature=0.9, tr_fields=("konusma",))
-        return r.konusma.strip()
+        if self.mode == "lokal":
+            # Küçük model: konuşma, müşterinin bakış açısından gerçek sohbet rolleriyle verilir
+            system = (f"Bir telekom şirketinin çağrı merkezini arayan müşteri {self.p['ad']}'sin. {self.p['ozet']} "
+                      f"Konuşma tarzın şöyle: {self.p['karakter']} Telefonda konuşur gibi doğal, günlük Türkçe kullan. "
+                      "ÖNEMLİ: Sen MÜŞTERİSİN, temsilci değilsin. Temsilcinin cümlelerini tekrarlama; 'size nasıl "
+                      "yardımcı olabilirim' gibi temsilci cümleleri kurma. Karakter tarifini değil, söyleyeceğin sözleri yaz.")
+            if not self.history:   # ilk tur: küçük model karakter tanımını tekrar etmesin, gerçekten aradığını bilsin
+                yon = ("Temsilci telefonu açtı ve 'Merhaba, ben Deniz, size nasıl yardımcı olabilirim?' dedi. "
+                       "Ona kendi sorununu anlat.")
+            prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {yon} {gorev} "
+                      f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}. "
+                      "Müşteri olarak 1-3 kısa cümleyle cevap ver.")
+            hist = self._chat_history("müşteri")
+        else:
+            hist = None
+        last_agent = next((h["metin"] for h in reversed(self.history) if h["rol"] == "asistan"), "")
+        self._customer_fallback = False
+        schema = LocalCustomerReply if self.mode == "lokal" else CustomerReply
+        for attempt in range(2):
+            try:
+                r = llm.generate_json(system, prompt, schema, temperature=0.9 if attempt == 0 else 1.0,
+                                      tr_fields=("konusma",), history=hist)
+            except Exception as e:  # noqa: BLE001  bozuk/yarım JSON: bir daha dene, olmazsa hazır cümle
+                if "bağlanılamadı" in str(e) or "modeli yok" in str(e):
+                    raise
+                print(f"[koruma] müşteri cevabı okunamadı: {str(e)[:100]}", flush=True)
+                continue
+            text = clean_utterance(r.konusma)
+            low = text.lower()
+            bad = (len(text.split()) < (4 if not self.history else 1) or _similar(text, last_agent) > 0.5
+                   or (self.mode == "lokal" and low.rstrip(".!") in self.p["karakter"].lower())
+                   or any(p in low for p in AGENT_PHRASES) or low.startswith(self.p["ad"].lower()))
+            if not bad:
+                return text
+            print(f"[koruma] müşteri cevabı reddedildi (tekrar/rol karışması): {text[:80]!r}", flush=True)
+            prompt += (" DİKKAT: Önceki denemende temsilcinin sözlerini tekrarladın ya da temsilci gibi konuştun. "
+                       "Sen müşterisin; kendi derdini kendi ağzından anlat.")
+        self._customer_fallback = True       # iki deneme de bozuksa hazır müşteri cümlesine düş
+        if ending == "ayrildi":
+            return MOCK_CHURN
+        if ending == "kaldi" or all_done:
+            return MOCK_STAY if self.mood >= STAY_THRESHOLD else "Sorunlarım çözüldü ama açıkçası hâlâ kırgınım."
+        bucket = 0 if self.mood < -0.5 else (1 if self.mood < 0 else 2)
+        return MOCK_CUSTOMER[self.current_issue][bucket]
+
+    def _chat_history(self, me: str) -> list[dict]:
+        """Konuşmayı `me` ajanının bakış açısından sohbet rollerine çevirir (kendi sözleri: assistant, karşı taraf: user).
+        İşlem sonuçları asistanın kendi mesajına not olarak eklenir."""
+        msgs: list[dict] = []
+        for h in self.history:
+            if h["rol"] == "sistem":
+                if me == "asistan" and msgs and msgs[-1]["role"] == "assistant":
+                    msgs[-1]["content"] += f" (İşlem sonucu: {h['metin']})"
+                continue
+            role = "assistant" if h["rol"] == me else "user"
+            msgs.append({"role": role, "content": h["metin"]})
+        return msgs
 
     # ------------------------------------------------------------ asistan turu
     def agent_turn(self) -> dict:
@@ -334,7 +457,8 @@ class Call:
                     break
             if tool == "kampanya_tanimla" and not self.kampanya:
                 self.kampanya = kampanya_ilk = True
-            actions.append({"arac": tool, "sonuc": res, "cozdu": solved})
+            actions.append({"arac": tool, "sonuc": res, "cozdu": solved,
+                            "metinden": tool in reply.get("metinden_araclar", [])})
 
         self.agent_turns += 1
         self.last_agent = {"strateji": s, "ton": t, "cozulen": cozulen, "kampanya_ilk": kampanya_ilk}
@@ -389,8 +513,51 @@ class Call:
             f"Daha önce yapılan işlemler: {'; '.join(done) or 'yok'}\n\n"
             f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver."
         )
-        r: AgentReply = llm.generate_json(system, prompt, AgentReply, temperature=0.6, tr_fields=("cevap", "ic_ses"))
-        return r.model_dump()
+        if self.mode == "lokal":
+            system += " Araç adlarını (ör. ariza_kaydi_ac) müşteriye söyleme; yaptığın işlemi doğal cümleyle anlat."
+            prompt = prompt.replace(f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver.",
+                                    "[YÖNERGE] Müşterinin son mesajına temsilci olarak cevap ver. Müşterinin cümlelerini "
+                                    "tekrarlama, aynı cümleyi iki kez kurma, en fazla 3 kısa cümle kullan.")
+            hist = self._chat_history("asistan")
+        else:
+            hist = None
+        last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
+        schema = LocalAgentReply if self.mode == "lokal" else AgentReply
+        out = None
+        for attempt in range(2):
+            try:
+                r = llm.generate_json(system, prompt, schema, temperature=0.6 if attempt == 0 else 0.8,
+                                      tr_fields=("cevap", "ic_ses"), history=hist)
+            except Exception as e:  # noqa: BLE001
+                if "bağlanılamadı" in str(e) or "modeli yok" in str(e):
+                    raise
+                print(f"[koruma] asistan cevabı okunamadı: {str(e)[:100]}", flush=True)
+                continue
+            out = r.model_dump()
+            out["cevap"] = clean_utterance(out["cevap"])
+            if self.agent_turns > 0:   # her tura "Merhaba" ile başlamasın
+                out["cevap"] = re.sub(r"^merhaba[,!.]?\s*", "", out["cevap"], flags=re.I) or out["cevap"]
+            if len(out["cevap"]) >= 3 and _similar(out["cevap"], last_cust) <= 0.55:
+                break
+            print(f"[koruma] asistan cevabı reddedildi (müşteriyi tekrar): {out['cevap'][:80]!r}", flush=True)
+            prompt += " DİKKAT: Müşterinin sözlerini tekrarlama; kendi cevabını ver."
+        else:
+            out = out or {"ic_ses": "", "araclar": []}
+            out["cevap"] = MOCK_AGENT[s]
+        if len(out.get("ic_ses", "")) < 10 or _similar(out["ic_ses"], out["cevap"]) > 0.7:
+            out["ic_ses"] = f"{STRATEGIES[s]['ad']} stratejisini uyguluyorum."
+        out["metinden_araclar"] = []
+        if self.mode == "lokal" and not out["araclar"]:
+            low = ascii_tr(out["cevap"])
+            open_issues = [i for i in self.revealed_issues() if i not in self.resolved]
+            raw = ascii_tr(r.cevap if out else "")
+            for tool, pat in TOOL_HINTS.items():
+                if (re.search(pat, low) or tool in raw) and len(out["araclar"]) < 2:
+                    useful = any(tool in ISSUES[i]["cozen"] for i in open_issues) or tool == "kampanya_tanimla"
+                    if useful:
+                        out["araclar"].append(tool)
+                        out["metinden_araclar"].append(tool)
+        return out
 
     # ------------------------------------------------------------ bitiş
     def _finish(self):

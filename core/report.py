@@ -320,6 +320,7 @@ def to_html(rep: dict) -> str:
         cust = (f'<div class="bubble cust"><div class="who">Müşteri · T{t["tur"]}'
                 f'{" · " + E(ISSUES[mu["konu"]]["ad"]) if mu.get("konu") else ""}</div>{E(mu["metin"])}'
                 f'<div class="meta">Gerçek ruh hali: <b>{_f(mu["gercek_ruh_hali"])}</b> ({E(mu["gercek_etiket"])}) · '
+                f'{"<b>Model bozuk cevap verdi; hazır müşteri cümlesi kullanıldı.</b> · " if mu.get("yedek_cumle") else ""}'
                 f'TTS tonlaması: <code>{E(mu["tts_tonu"])}</code>{" · <a href=" + chr(34) + E(mu["ses"]) + chr(34) + ">ses kaydı</a>" if mu.get("ses") else ""}</div>'
                 + (f'<details><summary>Ruh hali neden değişti? (asistanın önceki hamlesinin etkisi)</summary>{comp}</details>' if comp else "")
                 + '</div>')
@@ -375,7 +376,8 @@ def to_html(rep: dict) -> str:
                           + (f'<p class="director">⚠ Yönetmen: {E(a["yonetmen"])}</p>' if a.get("yonetmen") else "")
                           + f'<details><summary>Thompson örnekleri (en yüksek örnek seçilir)</summary><div class="grid2">'
                             f'<div><h5>Strateji</h5>{samples("strateji")}</div><div><h5>Ton</h5>{samples("ton")}</div></div></details>')
-                tools = "".join(f'<li><code>{E(x["arac"])}</code>: {E(x["sonuc"])}{" <b>(çözdü: " + E(x["cozdu"]) + ")</b>" if x["cozdu"] else ""}</li>'
+                tools = "".join(f'<li><code>{E(x["arac"])}</code>: {E(x["sonuc"])}{" <b>(çözdü: " + E(x["cozdu"]) + ")</b>" if x["cozdu"] else ""}'
+                                f'{" <i>(model aracı çağırmadı; cevabın metninden çıkarıldı)</i>" if x.get("metinden") else ""}</li>'
                                 for x in a.get("araclar") or [])
                 choice += (f'<div class="bubble agent"><div class="who">Asistan</div>{E(a.get("cevap", ""))}'
                            f'<div class="meta">İç ses: <i>{E(a.get("ic_ses", ""))}</i>'

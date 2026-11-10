@@ -35,9 +35,9 @@ if grep -qi '^SAGLAYICI=lokal' .env 2>/dev/null; then
     .venv/bin/python -m pip install -q -r requirements-lokal.txt
     echo ok > .venv/lokal-kurulu.txt
   fi
-  LLM=$(grep -i '^LOKAL_LLM=' .env | cut -d= -f2-); LLM=${LLM:-qwen2.5:3b}
+  LLM=$(grep -i '^LOKAL_LLM=' .env | cut -d= -f2-); LLM=${LLM:-gemma3:4b}
   if command -v ollama >/dev/null; then
-    ollama list | grep -qi "$LLM" || { echo "$LLM modeli indiriliyor (ilk sefer, ~2 GB)..."; ollama pull "$LLM"; }
+    ollama list | grep -qi "$LLM" || { echo "$LLM modeli indiriliyor (ilk sefer, ~3 GB)..."; ollama pull "$LLM"; }
   else
     echo "[UYARI] Ollama bulunamadı. https://ollama.com/download adresinden kurun, sonra: ollama pull $LLM"
   fi

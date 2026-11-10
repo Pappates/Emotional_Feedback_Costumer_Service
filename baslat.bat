@@ -55,7 +55,7 @@ if not exist ".venv\lokal-kurulu.txt" (
   ".venv\Scripts\python.exe" -m pip install -r requirements-lokal.txt -q || (echo [HATA] Lokal paketler kurulamadi. Internet/proxy ayarlarini kontrol edin. & pause & exit /b 1)
   > ".venv\lokal-kurulu.txt" echo ok
 )
-set "LLM=qwen2.5:3b"
+set "LLM=gemma3:4b"
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do if /i "%%a"=="LOKAL_LLM" set "LLM=%%b"
 where ollama >nul 2>nul
 if errorlevel 1 (
@@ -66,5 +66,5 @@ if errorlevel 1 (
   echo.
   exit /b 0
 )
-ollama list | findstr /i /c:"%LLM%" >nul || (echo %LLM% modeli indiriliyor ^(ilk sefer, ~2 GB^)... & ollama pull %LLM%)
+ollama list | findstr /i /c:"%LLM%" >nul || (echo %LLM% modeli indiriliyor ^(ilk sefer, ~3 GB^)... & ollama pull %LLM%)
 exit /b 0

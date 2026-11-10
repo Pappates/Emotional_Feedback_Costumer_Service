@@ -96,10 +96,10 @@ bilgisayarında çalışır. GPU gerekmez. İlk kurulumda `baslat.bat` anahtar s
 
 | İş | Lokal model | CPU'da süre (4 çekirdek, ölçülen) |
 |---|---|---|
-| Diyalog (asistan + müşteri) | **Ollama** üzerinden `qwen2.5:3b` (JSON şemalı çıktı) | cevap başına ~3-6 sn (tahmini, makineye bağlı) |
+| Diyalog (asistan + müşteri) | **Ollama** üzerinden `gemma3:4b` (JSON şemalı çıktı) | cevap başına ~17-23 sn (4 çekirdekli test makinesi; daha güçlü CPU'da daha hızlı) |
 | Ses → metin | **faster-whisper** `small` (int8) | ~1,4 sn / cümle |
 | Sesten duygu | `superb/wav2vec2-base-superb-er` | ~0,1 sn |
-| Metinden duygu | `savasy/bert-base-turkish-sentiment-cased` | ~0,03 sn |
+| Metinden duygu | `savasy/bert-base-turkish-sentiment-cased`, cümle cümle puanlanıp ortalanır (×0,6) | ~0,1 sn |
 | Churn niyeti, konu | Türkçe anahtar kelime kuralları | anlık |
 | Seslendirme | **Piper** `tr_TR-dfki-medium` (hız, ses yüksekliği, perde ile tonlama) | ~0,2 sn |
 
@@ -121,15 +121,34 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
 | `SAGLAYICI` | `gemini` | `lokal` yapınca bulut kullanılmaz |
-| `LOKAL_LLM` | `qwen2.5:3b` | Ollama modeli. Türkçe kalitesi yetmezse `gemma3:4b` veya `qwen2.5:7b` dene (daha yavaş) |
+| `LOKAL_LLM` | `gemma3:4b` | Ollama modeli. Daha hızlı ama daha zayıf: `gemma3:1b`; daha iyi ama yavaş: `gemma3:12b` |
 | `LOKAL_WHISPER` | `small` | `base` daha hızlı, `medium` daha doğru |
 | `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
 | `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama başka makinedeyse |
 
-**Testte görülen sınırlamalar (Aşama 2'de eğitilecek kısımlar):**
-* **Metin duygu modeli** ürün yorumlarıyla eğitilmiş; kelimelere bakıyor. "Tamam, kaydı açtınız ama ne zaman gelecekler?"
-  cümlesini +0,89 (olumlu) okudu. Çağrı merkezi verisiyle ince ayar gerekiyor.
+**Küçük modellerle yaşanan sorunlar ve alınan önlemler** (gerçek modellerle test edildi):
+
+| Sorun | Önlem |
+|---|---|
+| `qwen2.5:3b` Türkçede rolleri karıştırdı (müşteri temsilci gibi konuştu), karşı tarafın cümlelerini aynen tekrarladı, "[adres]" gibi yer tutucular yazdı | Varsayılan model `gemma3:4b` yapıldı; aynı testte doğal ve tutarlı Türkçe konuştu |
+| Konuşma tek metin bloğu olarak verilince küçük model metni "devam ettiriyor" | Her ajan konuşmayı kendi bakış açısından gerçek sohbet rolleriyle (user/assistant) görüyor |
+| Müşteri, temsilcinin sözünü tekrarlıyor ya da temsilci gibi konuşuyor | Benzerlik ve kalıp kontrolü; bozuksa yeniden üretim, yine bozuksa hazır müşteri cümlesi (raporda işaretlenir) |
+| Model "arıza kaydı açıyorum" deyip aracı çağırmıyor | Lokal modda işlem, cevabın metninden çıkarılıyor (raporda "metinden çıkarıldı" diye işaretlenir) |
+| Uzun "iç ses" JSON'u yarıda kesiyor; satır sonu JSON'u bozuyor | Uzunluk sınırlı şema, hata toleranslı okuma, iki deneme |
+| Araç adını müşteriye okuma ("fatura_incele_iade aracını..."), Kiril harfleri ("Haklıсыз"), "(İşlem sonucu: ...)" notunu okuma | Cevap temizleme |
+| Metin duygu modeli karışık mesajlarda ±1'e doyuyor | Cümle cümle puanlama + ölçek daraltma: MAE 0,63 → 0,30 |
+
+Bu önlemlerden sonra gerçek `gemma3:4b` ile yapılan testte iki görüşme de **müşteriyi tutarak ve iki sorunu da
+çözerek** bitti (Zeynep Hanım: algı −0,38 → +0,26, gerçek −0,55 → +0,04; Ahmet Bey: algı −0,33 → +0,38,
+gerçek −0,75 → +0,38).
+
+**Hâlâ var olan sınırlamalar (Aşama 2'de eğitilecek kısımlar):**
+* **Metin duygu modeli** ürün yorumlarıyla eğitilmiş; kelimelere bakıyor. İyileştirmeden sonra bile gerçek ruh haliyle
+  korelasyonu ~0,6. Çağrı merkezi verisiyle ince ayar gerekiyor. (Gemma'nın kendisini duygu puanlayıcı olarak denedik:
+  hem yavaş, 7 sn/cümle, hem de daha kötü sonuç verdi.)
+* **Hız:** 4 çekirdekli test makinesinde LLM cevabı ~20 sn, tur başına (asistan + müşteri) ~35-45 sn.
+  Demo için "Sesleri çal" kapalı metin modu ve önceden kaydedilmiş görüşmeler önerilir.
 * **Ses duygu modeli** İngilizce oyunculu konuşmayla eğitilmiş; Türkçe öfkeli müşteriyi "mutlu" (%59) sınıfladı.
   Bu yüzden füzyonda ağırlığı düşük (valensin %40'ı). Türkçe duygulu konuşma verisiyle ince ayar gerekiyor.
 * **Piper'da tek Türkçe ses** var; konuşmacılar perde farkıyla ayrılıyor ve ses duyguyu gerçekten taşımıyor
