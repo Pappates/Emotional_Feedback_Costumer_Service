@@ -103,6 +103,32 @@ seslendirmeyi tarayıcı yapar, duygu analizi simüle edilir. Öğrenme algoritm
   1-2 iyi görüşme kaydet; internet ya da kota sorun çıkarırsa onu oynatırsın. Pakette örnek olarak bir
   Zeynep Hanım görüşmesi var.
 
+## Ayrıntılı duygu raporları
+
+Panelden yapılan her görüşme bittiğinde arka tarafta otomatik bir rapor oluşur:
+`data/raporlar/<görüşme id>/` içinde **rapor.html** (okunabilir rapor), **rapor.csv** (Excel için, `;` ayraçlı,
+ondalık virgüllü) ve **rapor.json** (ham veri). Görüşme bitince panelde "Detaylı duygu raporunu aç" linki çıkar;
+tüm görüşmelerin karşılaştırması için panelin sağ üstündeki **Tüm raporlar** sayfası (`/raporlar`) kullanılır.
+
+Raporda her tur için:
+
+| Bölüm | İçerik |
+|---|---|
+| Müşteri | Söylenen cümle, gizli ruh hali, TTS tonlaması, ses kaydı linki |
+| Ruh hali değişimi | Asistanın önceki hamlesinin etkisi bileşen bileşen: strateji etkisi, ton etkisi, çözüm bonusu, kampanya, sabır cezası, gürültü |
+| Algı | Duygu etiketi, valens, algı hatası (algılanan − gerçek), churn riski, konu, ses ve söz ipuçları, algının kaynağı (ses+metin / yalnızca metin) |
+| Akustik | Süre, enerji (dB), perde (Hz), perde dalgalanması, konuşma hızı, akustik gerginlik ve uyarılmışlık füzyonunun hesabı |
+| Ödül | `(yeni valens − önceki valens) + 0,15 × çözülen sorun` hesabının sayılarla açılımı ve kırpma |
+| Seçim | Seçilen strateji ve ton, gerekçesi, yönetmen uyarısı, her kol için tahmin / belirsizlik / Thompson örneği |
+| Asistan | Cevap, iç ses, çalıştırılan araçlar ve sonuçları |
+
+Görüşme düzeyinde metrikler: algı hatası (MAE ve ortalama sapma), algı ile gerçek ruh hali arasındaki Pearson
+korelasyonu, **yön uyumu** (gerçek ruh hali anlamlı değiştiğinde algının doğru yönde değişme oranı), ortalama ödül,
+öğrenilen tercihlerle gizli tercihlerin karşılaştırması (en iyi kol eşleşmesi ve Spearman sıra korelasyonu).
+Raporun "Yöntem" bölümü, duygu değişiminin nasıl analiz edildiğini formülleriyle anlatır.
+
+Hızlı simülasyon ("60 görüşme simüle et") görüşmeleri rapor üretmez.
+
 ## Demo akışı (yaklaşık 5 dakika)
 
 0. Sunumdan önce: **"60 görüşme simüle et"**e bir kez bas. Böylece asistan canlı görüşmeye genel bilgiyle
@@ -121,6 +147,7 @@ seslendirmeyi tarayıcı yapar, duygu analizi simüle edilir. Öğrenme algoritm
 | Dosya | İçerik |
 |---|---|
 | `core/learner.py` | Thompson Sampling öğrenicisi (avcının beyni) |
+| `core/report.py` | Görüşme başına ayrıntılı duygu raporu (HTML/CSV/JSON) ve özet sayfası |
 | `core/emotion.py` | Akustik özellikler + Gemini ses ve duygu analizi |
 | `core/call.py` | Görüşme döngüsü, müşteri ve asistan ajanları, araçlar |
 | `core/catalog.py` | Stratejiler, tonlar, sorunlar, araçlar, müşteri profilleri |

@@ -3,3 +3,5 @@ __pycache__/
 .env
 data/global_model.json
 .venv/
+data/raporlar/*
+!data/raporlar/.gitkeep

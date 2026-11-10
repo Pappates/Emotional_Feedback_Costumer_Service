@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from . import config, emotion, llm
 from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES, TOOLS, mood_delivery, mood_label
-from .learner import CallLearner, GlobalModel
+from .learner import REWARD_CLIP, CallLearner, GlobalModel
 
 PROGRESS_WEIGHT = 0.15
 RESOLVE_MOOD_BONUS = 0.15
@@ -75,8 +75,12 @@ MOCK_RESOLVE_P = {"cozum_odakli": 0.55, "teknik_aciklama": 0.5, "dinle_sor": 0.4
 
 class Call:
     def __init__(self, persona_id: str, global_model: GlobalModel, audio: bool = True,
-                 mode: str | None = None, seed: int | None = None, policy: str = "ogrenen"):
+                 mode: str | None = None, seed: int | None = None, policy: str = "ogrenen",
+                 save_report: bool = True):
         self.policy = policy
+        self.save_report = save_report
+        self.events: list[dict] = []          # ayrıntılı rapor için tur tur kayıt (core/report.py)
+        self.started_at = __import__("time").time()
         self.id = uuid.uuid4().hex[:10]
         self.persona_id = persona_id
         self.p = PERSONAS[persona_id]
@@ -138,16 +142,23 @@ class Call:
     # ------------------------------------------------------------ müşteri turu
     def customer_turn(self) -> dict:
         info = {}
+        bilesen = None
         if self.last_agent is not None:
             a = self.last_agent
-            d = self.p["tercih_strateji"][a["strateji"]] + self.p["tercih_ton"][a["ton"]]
-            d += RESOLVE_MOOD_BONUS * len(a["cozulen"])
-            if a["kampanya_ilk"]:
-                d += self.p["kampanya_etkisi"]
-            if not a["cozulen"] and self.agent_turns >= 3:
-                d -= 0.06                      # sabır azalıyor
-            d += float(self.rng.normal(0, 0.04))
+            bilesen = {
+                "onceki": round(self.mood, 4),
+                "strateji_etkisi": self.p["tercih_strateji"][a["strateji"]],
+                "ton_etkisi": self.p["tercih_ton"][a["ton"]],
+                "cozum_bonusu": RESOLVE_MOOD_BONUS * len(a["cozulen"]),
+                "kampanya_etkisi": self.p["kampanya_etkisi"] if a["kampanya_ilk"] else 0.0,
+                "sabir_cezasi": -0.06 if (not a["cozulen"] and self.agent_turns >= 3) else 0.0,  # sabır azalıyor
+                "gurultu": float(self.rng.normal(0, 0.04)),
+            }
+            d = sum(v for k, v in bilesen.items() if k != "onceki")
             self.mood = float(np.clip(self.mood + d, -1, 1))
+            bilesen["toplam"] = round(d, 4)
+            bilesen["sonraki"] = round(self.mood, 4)
+            bilesen["kirpildi"] = abs((bilesen["onceki"] + d) - self.mood) > 1e-9
             self.last_mood_delta = d
             info["ruh_hali_degisimi"] = round(d, 3)
             while self.current_issue and self.current_issue in self.resolved:
@@ -161,8 +172,8 @@ class Call:
             ending = "ayrildi"
         elif all_done and self.mood >= STAY_THRESHOLD:
             ending = "kaldi"
-        elif all_done and self.agent_turns - self.done_since >= 1:
-            # Sorunlar çözüldükten sonra asistana bir tur gönül alma şansı verilir, sonra görüşme biter.
+        elif all_done and self.agent_turns - self.done_since >= 2:
+            # Sorunlar çözüldükten sonra asistana iki tur gönül alma şansı verilir, sonra görüşme biter.
             # (Önceden müşteri vedalaştığı halde görüşme uzuyor, müşteri bundan sinirleniyordu.)
             ending = "kaldi" if self.mood >= -0.2 else "ayrildi"
         elif self.agent_turns >= config.MAX_TURNS:
@@ -178,6 +189,11 @@ class Call:
             self.ended = True
             self.outcome = ending
 
+        self.events.append({
+            "tip": "musteri", "metin": text, "ses": url, "gercek_ruh_hali": round(self.mood, 4),
+            "gercek_etiket": mood_label(self.mood), "tts_tonu": mood_delivery(self.mood),
+            "konu": self.current_issue, "ruh_hali_bilesenleri": bilesen, "bitti": self.ended, "sonuc": self.outcome,
+        })
         return {
             "rol": "musteri", "metin": text, "ses": url, "bitti": self.ended, "sonuc": self.outcome,
             "gercek_ruh_hali": round(self.mood, 3), "gercek_etiket": mood_label(self.mood),
@@ -254,8 +270,17 @@ class Call:
 
         # 3) Öğren: önceki hamlenin ödülü
         reward_info = None
+        odul_detay = None
         if self.last_agent is not None and self.prev_valence is not None:
             r = (v - self.prev_valence) + PROGRESS_WEIGHT * len(self.last_agent["cozulen"])
+            odul_detay = {
+                "strateji": self.last_agent["strateji"], "ton": self.last_agent["ton"],
+                "onceki_valens": round(self.prev_valence, 4), "yeni_valens": round(v, 4),
+                "duygu_degisimi": round(v - self.prev_valence, 4),
+                "cozulen_sorun": len(self.last_agent["cozulen"]),
+                "ilerleme_bonusu": round(PROGRESS_WEIGHT * len(self.last_agent["cozulen"]), 4),
+                "ham_odul": round(r, 4), "ogrenmeye_giren": round(max(-REWARD_CLIP, min(REWARD_CLIP, r)), 4),
+            }
             self.rewards.append(r)
             for dim in ("strateji", "ton"):
                 self.learner.update(dim, self.last_agent[dim], r)
@@ -268,9 +293,14 @@ class Call:
         })
 
         base = {"rol": "asistan", "analiz": an, "odul": reward_info, "zaman_cizelgesi": self.timeline}
+        ev = {"tip": "asistan", "algi": an, "gercek_ruh_hali": round(self.mood, 4),
+              "algi_hatasi": round(v - self.mood, 4), "odul": odul_detay, "baglam": self.learner.ctx}
+        self.events.append(ev)
         if self.ended:
+            ev["beyin_son"] = self.learner.snapshot()
             self._finish()
             return {**base, "bitti": True, "sonuc": self.outcome, "ozet": self.summary(),
+                    "rapor": f"/raporlar/{self.id}" if self.save_report else None,
                     "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}
 
         # 4) Yönetmen (Director): müşteri kaçmak üzereyse uyarı
@@ -280,6 +310,8 @@ class Call:
             director = "Müşteri kaçmak üzere! Kalıcı bir çözüm taahhüdü ya da somut bir telafi düşün."
 
         # 5) Strateji ve ton seç (Thompson Sampling)
+        ev["beyin_secim_oncesi"] = self.learner.snapshot()
+        ev["yonetmen"] = director
         if self.policy == "rastgele":
             s, s_samples = self.pyrng.choice(list(STRATEGIES)), {}
             t, t_samples = self.pyrng.choice(list(TONES)), {}
@@ -306,7 +338,13 @@ class Call:
 
         self.agent_turns += 1
         self.last_agent = {"strateji": s, "ton": t, "cozulen": cozulen, "kampanya_ilk": kampanya_ilk}
+        ev.update({
+            "secim": {"strateji": s, "ton": t, "ornekler": {"strateji": s_samples, "ton": t_samples},
+                      "neden": {"strateji": self.learner.explain("strateji", s), "ton": self.learner.explain("ton", t)}},
+            "cevap": reply["cevap"], "ic_ses": reply["ic_ses"], "araclar": actions,
+        })
         wav, url = self._speak(reply["cevap"], TONES[t]["tts"], config.AGENT_VOICE, "asistan")
+        ev["ses"] = url
         self.history.append({"rol": "asistan", "metin": reply["cevap"]})
         for a in actions:
             self.history.append({"rol": "sistem", "metin": f"[{a['arac']}] {a['sonuc']}"})
@@ -361,6 +399,12 @@ class Call:
         self._finished = True
         self.g.episodes.append(self.summary())
         self.g.save()
+        if self.save_report:
+            try:
+                from . import report
+                report.save(self)
+            except Exception as e:  # noqa: BLE001  rapor hatası görüşmeyi bozmasın
+                print(f"[rapor] oluşturulamadı: {e}", flush=True)
 
     def summary(self):
         return {
@@ -382,7 +426,8 @@ def run_fast(global_model: GlobalModel, n: int, persona: str | None = None, seed
     rng = random.Random(seed)
     for i in range(n):
         pid = persona or rng.choice(list(PERSONAS))
-        c = Call(pid, global_model, audio=False, mode="mock", seed=rng.randint(0, 10**9), policy=policy)
+        c = Call(pid, global_model, audio=False, mode="mock", seed=rng.randint(0, 10**9), policy=policy,
+                 save_report=False)
         c.customer_turn()
         while True:
             a = c.agent_turn()

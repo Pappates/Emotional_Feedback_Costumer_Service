@@ -8,11 +8,11 @@ import traceback
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core import config
+from core import config, report
 from core.call import Call, run_fast
 from core.catalog import ISSUES, PERSONAS, STRATEGIES, TONES
 from core.learner import GlobalModel
@@ -122,6 +122,35 @@ def recording(rid: str):
     if not f.exists():
         raise HTTPException(404, "Kayıt bulunamadı")
     return json.loads(f.read_text(encoding="utf-8"))
+
+
+@app.get("/raporlar", response_class=HTMLResponse)
+def reports_index():
+    return report.index_html()
+
+
+def _report_file(rid: str, name: str):
+    f = report.REPORT_DIR / rid / name
+    if not rid.isalnum() or not f.exists():
+        raise HTTPException(404, "Rapor bulunamadı")
+    return f
+
+
+@app.get("/raporlar/{rid}", response_class=HTMLResponse)
+def report_html(rid: str):
+    return _report_file(rid, "rapor.html").read_text(encoding="utf-8")
+
+
+@app.get("/raporlar/{rid}/csv")
+def report_csv(rid: str):
+    data = _report_file(rid, "rapor.csv").read_bytes()
+    return Response(data, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="duygu-raporu-{rid}.csv"'})
+
+
+@app.get("/raporlar/{rid}/json")
+def report_json(rid: str):
+    return FileResponse(_report_file(rid, "rapor.json"), media_type="application/json")
 
 
 @app.post("/api/train")

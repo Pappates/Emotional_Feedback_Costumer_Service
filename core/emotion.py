@@ -91,6 +91,7 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     feats = acoustic_features(wav_bytes, out["transkript"])
     out["akustik"] = feats
     # Füzyon: valens Gemini'den (söz + ton); uyarılmışlık iki kanalın ağırlıklı ortalaması
+    out["uyarilma_gemini"] = out["uyarilma"]
     if feats.get("akustik_uyarilma") is not None:
         out["uyarilma"] = round(0.6 * out["uyarilma"] + 0.4 * feats["akustik_uyarilma"], 3)
     out["kaynak"] = "ses + metin"

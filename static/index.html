@@ -104,6 +104,7 @@ body.reveal .track .truth{display:block}
   <h1>Duygu Avcısı</h1>
   <span class="sub">Müşterinin sesinden öğrenip konuşmasını ona göre ayarlayan sesli asistan</span>
   <span class="badge" id="modeBadge">…</span>
+  <a href="/raporlar" target="_blank" style="margin-left:auto;font-size:13px">Tüm raporlar</a>
 </header>
 <div class="bar">
   <select id="persona" aria-label="Müşteri"></select>
@@ -361,7 +362,8 @@ async function runCall(rec){
       showAnalysis(a);
       if(a.bitti){
         const ok = a.sonuc === 'kaldi';
-        addMsg('outcome ' + a.sonuc, '', ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)');
+        addMsg('outcome ' + a.sonuc, '', (ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)')
+          + (a.rapor ? `<div style="font-weight:400;margin-top:6px"><a href="${a.rapor}" target="_blank">Detaylı duygu raporunu aç</a> · <a href="${a.rapor}/csv">CSV indir</a></div>` : ''));
         CALL.lastSnap = a.beyin; CALL.lastSel = null; brain(a.beyin);
         break;
       }
