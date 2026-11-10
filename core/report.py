@@ -407,7 +407,9 @@ def to_html(rep: dict) -> str:
                                 f'{" <i>(model aracı çağırmadı; cevabın metninden çıkarıldı)</i>" if x.get("metinden") else ""}</li>'
                                 for x in a.get("araclar") or [])
                 choice += (f'<div class="bubble agent"><div class="who">Asistan</div>{E(a.get("cevap", ""))}'
-                           f'<div class="meta">İç ses: <i>{E(a.get("ic_ses", ""))}</i>'
+                           + (f'<div class="director">Kural dışı söz yakalandı: {E(", ".join(a["kural_disi_soz"]))} '
+                              '(ilgili cümle müşteriye söylenmeden çıkarıldı)</div>' if a.get("kural_disi_soz") else "")
+                           + f'<div class="meta">İç ses: <i>{E(a.get("ic_ses", ""))}</i>'
                            f'{" · <a href=" + chr(34) + E(a["ses"]) + chr(34) + ">ses kaydı</a>" if a.get("ses") else ""}</div>'
                            + (f'<ul class="tools">{tools}</ul>' if tools else "") + '</div>')
             agent = f'<div class="analysis">{perc}{rew}{choice}</div>'

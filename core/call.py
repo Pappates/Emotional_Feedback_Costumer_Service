@@ -110,6 +110,20 @@ COMPANY_FACTS = ("Arıza kaydı açılınca saha ekibi 4 saat içinde müdahale 
                  "arasıdır. Hat iyileştirmesi uzaktan yapılır ve hız 100 Mbps profiline ayarlanır. Fatura incelemesinde "
                  "hatalı 240 TL bir sonraki faturaya iade olarak yansır. Nakil talebinde yeni adreste hat 2 iş günü "
                  "içinde aktif olur. Telafi kampanyası 1 ay %30 indirim ve 50 GB ek internettir.")
+def promise_violations(text: str) -> list[str]:
+    """Şirket kurallarında olmayan süre/saat sözlerini bulur ('yarım saat içinde', 'yarın sabah', '10:00')."""
+    t = ascii_tr(text)
+    allowed = {"4 saat", "dort saat", "2 is gunu", "iki is gunu"}
+    found = [m.group(0) for m in re.finditer(
+        r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\b", t)
+        if m.group(0) not in allowed]
+    found += [m.group(0) for m in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?!\d)", t)
+              if not (m.group(1) in ("16", "18") and m.group(2) == "00")]
+    if re.search(r"\byarin\b", t):
+        found.append("yarın")
+    return found
+
+
 TOOL_SPOKEN = {"ariza_kaydi_ac": "arıza kaydı", "teknisyen_randevusu": "teknisyen randevusu",
                "hat_optimizasyonu": "hat iyileştirmesi", "fatura_incele_iade": "fatura incelemesi",
                "nakil_islemi": "nakil işlemi", "kampanya_tanimla": "telafi kampanyası"}
@@ -502,6 +516,7 @@ class Call:
             "secim": {"strateji": s, "ton": t, "ornekler": {"strateji": s_samples, "ton": t_samples},
                       "neden": {"strateji": self.learner.explain("strateji", s), "ton": self.learner.explain("ton", t)}},
             "cevap": reply["cevap"], "ic_ses": reply["ic_ses"], "araclar": actions,
+            "kural_disi_soz": reply.get("kural_disi_soz", []),
         })
         wav, url = self._speak(reply["cevap"], TONES[t]["tts"], config.AGENT_VOICE, "asistan")
         ev["ses"] = url
@@ -581,13 +596,31 @@ class Call:
             out["cevap"] = clean_utterance(out["cevap"])
             if self.agent_turns > 0:   # her tura "Merhaba" ile başlamasın
                 out["cevap"] = re.sub(r"^merhaba[,!.]?\s*", "", out["cevap"], flags=re.I) or out["cevap"]
+            if out["cevap"][:1].islower():          # cümlenin ortasından başlayan cevap
+                out["cevap"] = out["cevap"][0].upper() + out["cevap"][1:]
+            bad_promises = promise_violations(out["cevap"])
+            if bad_promises and attempt == 0:
+                # Müşteri ısrar edince küçük model kurallar dışı süre veriyordu ("yarım saat içinde gönderiyorum")
+                print(f"[koruma] kural dışı söz: {bad_promises} -> yeniden üretiliyor", flush=True)
+                prompt += (f" DİKKAT: '{', '.join(bad_promises)}' gibi şirket kurallarında olmayan bir süre/saat söz "
+                           "verdin. Müşteri ısrar etse bile yalnızca kurallardaki süreleri söyle; daha hızlısı mümkün "
+                           "değilse bunu nazikçe açıkla.")
+                continue
             if len(out["cevap"]) >= 3 and _similar(out["cevap"], last_cust) <= 0.55:
                 break
             print(f"[koruma] asistan cevabı reddedildi (müşteriyi tekrar): {out['cevap'][:80]!r}", flush=True)
             prompt += " DİKKAT: Müşterinin sözlerini tekrarlama; kendi cevabını ver."
         else:
             out = out or {"ic_ses": "", "araclar": []}
-            out["cevap"] = MOCK_AGENT[s]
+            if not out.get("cevap") or _similar(out["cevap"], last_cust) > 0.55:
+                out["cevap"] = MOCK_AGENT[s]
+        # ikinci denemede de kural dışı söz kaldıysa o cümleleri çıkar (başka cümle varsa)
+        out["kural_disi_soz"] = promise_violations(out["cevap"])
+        if out["kural_disi_soz"]:
+            sents = re.split(r"(?<=[.!?…])\s+", out["cevap"])
+            keep = [x for x in sents if not promise_violations(x)]
+            if keep:
+                out["cevap"] = " ".join(keep)
         out["ic_ses"] = clean_utterance(out.get("ic_ses", ""), max_sentences=2)
         cues = f"{an.get('ses_ipuclari', '')} {an.get('metin_ipuclari', '')}".lower()
         if (len(out.get("ic_ses", "").split()) < 4 or _similar(out["ic_ses"], out["cevap"]) > 0.7

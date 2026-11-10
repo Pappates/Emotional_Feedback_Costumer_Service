@@ -141,6 +141,8 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | Asistan uydurma söz veriyor ("faturanız iptal edildi", "para yarın 10:00'da hesabınızda") | İşlemlerin gerçek sonuçları "şirket kuralları" olarak asistana önceden veriliyor; uydurma tarih/saat/tutar yasak |
 | Asistan "işlemi tamamladım" deyip aracı çağırmıyor | Lokal modda asistanın kendi algıladığı konuyu çözen araç yönergede açıkça söyleniyor; "sil/kaldır/düzelt" gibi fiiller de metinden işlem çıkarımına eklendi |
 | Ses duygu modeli öfkeli Türkçe müşteriyi %80-95 "mutlu" sınıflıyor, algıyı yukarı çekiyor (ortalama sapma +0,20) | Ses modelinin valensteki payı %40 → %10 (`LOKAL_SES_VALENS_AGIRLIK`); uyarılmışlıkta kullanılmaya devam ediyor |
+| Müşteri ısrar edince asistan kurallar dışı süre veriyor ("yarım saat içinde gönderiyorum") | Kural dışı süre/saat sözü yakalanınca cevap yeniden üretiliyor; yine varsa o cümle müşteriye söylenmeden çıkarılıyor (raporda gösterilir) |
+| "Randevuyu iptal etmem gerekiyor" churn sayıldı (%85) | Ayrılma ifadeleri yalnızca abonelik/hat/operatörle ilgili olunca sayılıyor |
 
 Bu önlemlerden sonra gerçek `gemma3:4b` ile yapılan testte iki görüşme de **müşteriyi tutarak ve iki sorunu da
 çözerek** bitti (Zeynep Hanım: algı −0,38 → +0,26, gerçek −0,55 → +0,04; Ahmet Bey: algı −0,33 → +0,38,

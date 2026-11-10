@@ -233,8 +233,11 @@ def text_sentiment(text: str) -> dict:
     return {"parcalar": probs_all, "valens": round(float(np.mean(vals)) * SENT_SCALE, 3)}
 
 
-CHURN_PATTERNS = [r"iptal", r"başka (bir )?operat", r"operatör(ümü)? değiştir", r"geçece[ğk]", r"geçiyorum", r"ayrıl",
-                  r"aboneli[ğk]i?(mi)? (iptal|sonlandır|bitir)", r"bir daha (aramayın|sizinle)", r"kapatıyorum", r"yeter artık"]
+# Yalnızca abonelikten ayrılma niyeti. Kullanıcı raporunda "Randevuyu iptal etmem gerekiyor" cümlesi tek başına
+# "iptal" kelimesi yüzünden churn %85 sayılmıştı; artık iptalin neyle ilgili olduğuna bakılıyor.
+CHURN_PATTERNS = [r"(abonelik|aboneliğ|hat|sözleşme|üyelik|internet)\w*[^.!?]{0,30}(iptal|sonlandır|kapattır)",
+                  r"iptal ettir", r"başka (bir )?operat", r"operatör\w* değiştir", r"(rakip|başka) (firma|şirket)",
+                  r"(operatör|firma|şirket)\w*[^.!?]{0,20}geç(eceğim|iyorum|erim)", r"sizden ayrıl", r"bir daha sizinle"]
 TOPICS = {
     "internet_kesintisi": [r"internet(im)? (yok|gitti|kesik|çalışmıyor)", r"kesinti", r"kesildi", r"bağlantı yok", r"\bpos\b", r"modem"],
     "hiz_sorunu": [r"yavaş", r"\bhız", r"mbps", r"kopuyor", r"donuyor", r"ping"],
