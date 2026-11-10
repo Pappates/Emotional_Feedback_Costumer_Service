@@ -8,6 +8,22 @@ AUDIO_DIR = DATA_DIR / "audio"
 MODEL_FILE = DATA_DIR / "global_model.json"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _load_dotenv():
+    """Proje kökündeki .env dosyasını (varsa) okur. Ortamda zaten tanımlı değerleri ezmez."""
+    f = ROOT / ".env"
+    if not f.exists():
+        return
+    for line in f.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_dotenv()
+
 API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
 # Virgülle ayrılmış model listeleri: ilki tercih edilir, hata olursa sıradakine geçilir.
 TEXT_MODELS = [m.strip() for m in os.getenv(

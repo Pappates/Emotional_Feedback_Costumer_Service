@@ -38,7 +38,19 @@ vardır (örneğin Ahmet Bey lafı dolandırmaktan nefret eder, Zeynep Hanım em
 * **Öğrenme kanıtı:** "60 görüşme simüle et" düğmesi öğrenen asistanı her turda rastgele strateji
   seçen bir asistanla karşılaştırır (LLM kullanmaz, saniyeler sürer).
 
-## Kurulum (GPU gerekmez)
+## Hızlı başlangıç (tek tık)
+
+1. Python 3.10+ kurulu olsun (Windows'ta kurulumda **"Add python.exe to PATH"** kutusunu işaretle).
+2. Depoyu indir: `git clone https://github.com/Pappates/Emotional_Feedback_Costumer_Service`
+   (ya da GitHub'da **Code → Download ZIP**).
+3. **Windows:** `baslat.bat` dosyasına çift tıkla. **macOS / Linux:** terminalde `./baslat.sh`.
+
+İlk çalıştırmada script sanal ortamı kurar, paketleri yükler ve Gemini API anahtarını sorar
+(boş bırakırsan demo modunda açılır). Anahtar proje klasöründeki `.env` dosyasına yazılır
+(git'e gönderilmez). Sonraki açılışlarda doğrudan başlar ve tarayıcıda http://localhost:8000 açılır.
+Anahtarı değiştirmek için `.env` dosyasını düzenle ya da sil.
+
+## Kurulum (elle, GPU gerekmez)
 
 1. Python 3.10+ kurulu olmalı.
 2. Ücretsiz bir Gemini API anahtarı al: https://aistudio.google.com/apikey
