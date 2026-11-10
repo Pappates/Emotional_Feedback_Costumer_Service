@@ -37,9 +37,12 @@ def client():
     return _client
 
 
-def _with_fallback(kind: str, models: list[str], fn):
-    """fn(model) çağırır; geçici hata ya da kullanım dışı modelde sıradaki modeli dener."""
+def _with_fallback(kind: str, models: list[str], fn, avoid: str | None = None):
+    """fn(model) çağırır; geçici hata ya da kullanım dışı modelde sıradaki modeli dener.
+    avoid: verilirse o model sıranın sonuna alınır (ör. bozuk çıktı veren modeli atlamak için)."""
     order = ([_preferred[kind]] if kind in _preferred else []) + [m for m in models if m != _preferred.get(kind)]
+    if avoid in order:
+        order = [m for m in order if m != avoid] + [avoid]
     last = RuntimeError(f"{kind}: kullanılabilir model yok (hepsinin kotası dolu)")
     for rnd in range(2):                       # tüm listeyi en fazla iki tur dene
         for m in order:
@@ -63,8 +66,17 @@ def _with_fallback(kind: str, models: list[str], fn):
     raise last
 
 
+TR_CHARS = re.compile("[çğıöşüÇĞİÖŞÜ]")
+
+
+def _missing_turkish(obj: BaseModel, fields) -> bool:
+    return any(len(getattr(obj, f, "") or "") > 30 and not TR_CHARS.search(getattr(obj, f)) for f in fields)
+
+
 def generate_json(system: str, prompt: str, schema: type[BaseModel], audio_wav: bytes | None = None,
-                  temperature: float = 0.7) -> BaseModel:
+                  temperature: float = 0.7, tr_fields: tuple[str, ...] = ()) -> BaseModel:
+    """tr_fields: Türkçe karakter içermesi gereken alanlar. Hafif modeller bazen Türkçe karakterleri
+    atlıyor ("yasadiginiz"); öyle olursa önce aynı, sonra başka bir modelle yeniden üretilir."""
     from google.genai import types
 
     parts = []
@@ -87,7 +99,17 @@ def generate_json(system: str, prompt: str, schema: type[BaseModel], audio_wav: 
             return resp.parsed
         return schema.model_validate_json(resp.text)
 
-    return _with_fallback("metin", config.TEXT_MODELS, call)
+    r = _with_fallback("metin", config.TEXT_MODELS, call)
+    for attempt in range(2):
+        if not tr_fields or not _missing_turkish(r, tr_fields):
+            break
+        bad = _preferred.get("metin")
+        print(f"[gemini] {bad} Türkçe karaktersiz yazdı, yeniden üretiliyor ({attempt + 1}/2)…", flush=True)
+        parts[-1] = types.Part.from_text(
+            text=prompt + "\n\nDİKKAT: Türkçe karakterleri (ç, ğ, ı, ö, ş, ü, İ) mutlaka doğru kullan; "
+                          "'yasadiginiz' değil 'yaşadığınız' yaz.")
+        r = _with_fallback("metin", config.TEXT_MODELS, call, avoid=bad if attempt == 1 else None)
+    return r
 
 
 def pcm_to_wav(pcm: bytes, rate: int = 24000) -> bytes:

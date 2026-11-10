@@ -104,6 +104,7 @@ class Call:
         self.low_streak = 0
         self.last_mood_delta = 0.0
         self.mentioned: set[str] = set()
+        self.done_since: int | None = None    # tüm sorunların çözüldüğü asistan turu
 
     # ------------------------------------------------------------ yardımcılar
     @property
@@ -153,11 +154,17 @@ class Call:
                 self.issue_idx += 1
 
         all_done = self.current_issue is None
+        if all_done and self.done_since is None:
+            self.done_since = self.agent_turns
         ending = None
         if self.mood <= -0.95 and self.agent_turns >= 3:   # en az 3 şans tanı
             ending = "ayrildi"
         elif all_done and self.mood >= STAY_THRESHOLD:
             ending = "kaldi"
+        elif all_done and self.agent_turns - self.done_since >= 1:
+            # Sorunlar çözüldükten sonra asistana bir tur gönül alma şansı verilir, sonra görüşme biter.
+            # (Önceden müşteri vedalaştığı halde görüşme uzuyor, müşteri bundan sinirleniyordu.)
+            ending = "kaldi" if self.mood >= -0.2 else "ayrildi"
         elif self.agent_turns >= config.MAX_TURNS:
             ending = "kaldi" if self.mood > 0 else "ayrildi"
 
@@ -181,8 +188,10 @@ class Call:
         if self.mode == "mock":
             if ending == "ayrildi":
                 return MOCK_CHURN
-            if ending == "kaldi" or all_done:
-                return MOCK_STAY if self.mood >= STAY_THRESHOLD else "Sorun çözüldü ama açıkçası hâlâ çok kırgınım."
+            if ending == "kaldi":
+                return MOCK_STAY if self.mood >= STAY_THRESHOLD else "Sorunlarım çözüldü, hâlâ biraz kırgınım ama şimdilik devam ediyorum. İyi günler."
+            if all_done:
+                return "Sorun çözüldü ama açıkçası hâlâ çok kırgınım."
             lines = MOCK_CUSTOMER[self.current_issue]
             bucket = 0 if self.mood < -0.5 else (1 if self.mood < 0 else 2)
             return lines[bucket]
@@ -198,10 +207,14 @@ class Call:
 
         if ending == "ayrildi":
             gorev = "Artık sabrın tükendi: hattını iptal ettirip rakip operatöre geçeceğini söyle ve görüşmeyi bitir."
-        elif ending == "kaldi":
+        elif ending == "kaldi" and self.mood >= STAY_THRESHOLD:
             gorev = "Sorunların çözüldü ve memnunsun: teşekkür et, vedalaş ve görüşmeyi bitir."
+        elif ending == "kaldi":
+            gorev = ("Sorunların çözüldü; hâlâ biraz kırgınsın ama operatörde kalmaya karar verdin. "
+                     "Bunu kısaca belli ederek vedalaş ve görüşmeyi bitir.")
         elif all_done:
-            gorev = "Sorunların çözüldü ama hâlâ kırgınsın. Bunu dile getir."
+            gorev = ("Sorunların çözüldü ama hâlâ kırgınsın. Bunu dile getir. "
+                     "Henüz vedalaşma ve telefonu kapatacağını söyleme.")
         else:
             iss = ISSUES[self.current_issue]["ad"]
             yeni = self.issue_idx > 0 and self.current_issue not in self.mentioned
@@ -219,7 +232,7 @@ class Call:
             f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}.\n\n"
             f"Görüşme şu ana kadar:\n{self._transcript() or '(henüz başlamadı)'}\n\n1-3 cümleyle cevap ver."
         )
-        r: CustomerReply = llm.generate_json(system, prompt, CustomerReply, temperature=0.9)
+        r: CustomerReply = llm.generate_json(system, prompt, CustomerReply, temperature=0.9, tr_fields=("konusma",))
         return r.konusma.strip()
 
     # ------------------------------------------------------------ asistan turu
@@ -338,12 +351,7 @@ class Call:
             f"Daha önce yapılan işlemler: {'; '.join(done) or 'yok'}\n\n"
             f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver."
         )
-        r: AgentReply = llm.generate_json(system, prompt, AgentReply, temperature=0.6)
-        tr = re.compile("[çğıöşüÇĞİÖŞÜ]")
-        if any(len(x) > 40 and not tr.search(x) for x in (r.cevap, r.ic_ses)):
-            # Hafif modeller uzun bağlamda bazen Türkçe karakterleri atlıyor: bir kez yeniden üret
-            r = llm.generate_json(system, prompt + "\nDİKKAT: Türkçe karakterleri (ç, ğ, ı, ö, ş, ü) mutlaka kullan.",
-                                  AgentReply, temperature=0.4)
+        r: AgentReply = llm.generate_json(system, prompt, AgentReply, temperature=0.6, tr_fields=("cevap", "ic_ses"))
         return r.model_dump()
 
     # ------------------------------------------------------------ bitiş
