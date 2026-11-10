@@ -104,11 +104,12 @@ body.reveal .track .truth{display:block}
   <h1>Duygu Avcısı</h1>
   <span class="sub">Müşterinin sesinden öğrenip konuşmasını ona göre ayarlayan sesli asistan</span>
   <span class="badge" id="modeBadge">…</span>
+  <span class="badge" id="localBadge" style="display:none"></span>
   <a href="/raporlar" target="_blank" style="margin-left:auto;font-size:13px">Tüm raporlar</a>
 </header>
 <div class="bar">
   <select id="persona" aria-label="Müşteri"></select>
-  <label class="chk"><input type="checkbox" id="useAudio" checked> Gemini sesi (TTS + sesten duygu)</label>
+  <label class="chk"><input type="checkbox" id="useAudio" checked> Model sesi (TTS + sesten duygu)</label>
   <label class="chk"><input type="checkbox" id="playAudio" checked> Sesleri çal</label>
   <button class="primary" id="startBtn">Görüşmeyi başlat</button>
   <button id="pauseBtn" disabled>Duraklat</button>
@@ -413,11 +414,30 @@ $('pauseBtn').onclick = () => { paused = !paused; $('pauseBtn').textContent = pa
 $('reveal').onchange = e => { document.body.classList.toggle('reveal', e.target.checked);
   moodChart.data.datasets[1].hidden = !e.target.checked; moodChart.update(); brain(CALL && CALL.lastSnap, CALL && CALL.lastSel); };
 
+// Lokal modda modellerin yüklenme durumunu göster (ilk açılışta indirme sürebilir)
+async function pollLocal(){
+  try{
+    const i = await api('/api/info'); const st = i.lokal_durum || {};
+    const vals = Object.entries(st);
+    const err = vals.filter(([k,v]) => String(v).startsWith('HATA'));
+    const loading = vals.filter(([k,v]) => String(v).startsWith('yükleniyor'));
+    const b = $('localBadge'); b.style.display = 'inline-block';
+    b.title = vals.map(([k,v]) => `${k}: ${v}`).join('\n');
+    b.textContent = err.length ? `⚠ ${err.map(([k,v]) => v.replace('HATA: ','')).join(' | ')}`
+      : (loading.length || vals.length < 5) ? `Modeller yükleniyor… (${vals.filter(([k,v]) => String(v).startsWith('hazır')).length} hazır)` : '✔ Lokal modeller hazır';
+    b.style.borderColor = err.length ? 'var(--neg)' : '';
+    if(!err.length && (loading.length || vals.length < 5)) setTimeout(pollLocal, 3000);
+  }catch(e){ setTimeout(pollLocal, 5000); }
+}
+
 (async function init(){
   initCharts();
   INFO = await api('/api/info');
-  $('modeBadge').textContent = INFO.mod === 'gemini' ? `Gemini: ${INFO.metin_modeli} + ${INFO.tts_modeli}` : 'Demo modu (API anahtarı yok: tarayıcı sesi kullanılır)';
-  if(INFO.mod !== 'gemini'){ $('useAudio').checked = false; $('useAudio').disabled = true; }
+  $('modeBadge').textContent = INFO.mod === 'gemini' ? `Gemini: ${INFO.metin_modeli} + ${INFO.tts_modeli}`
+    : INFO.mod === 'lokal' ? `Lokal: ${INFO.metin_modeli} + ${INFO.tts_modeli} (kota yok)`
+    : 'Demo modu (API anahtarı yok: tarayıcı sesi kullanılır)';
+  if(INFO.mod === 'mock'){ $('useAudio').checked = false; $('useAudio').disabled = true; }
+  if(INFO.mod === 'lokal') pollLocal();
   $('persona').innerHTML = '<option value="rastgele">Rastgele müşteri</option>' +
     Object.entries(INFO.personalar).map(([k,p]) => `<option value="${k}">${p.ad}: ${p.sorunlar.join(' + ')}</option>`).join('');
   fillRecordings(INFO.kayitlar || []);

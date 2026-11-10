@@ -85,8 +85,8 @@ class Call:
         self.persona_id = persona_id
         self.p = PERSONAS[persona_id]
         self.g = global_model
-        self.mode = mode or ("gemini" if config.has_gemini() else "mock")
-        self.audio = audio and self.mode == "gemini"
+        self.mode = mode or config.default_mode()
+        self.audio = audio and self.mode in ("gemini", "lokal")
         self.rng = np.random.default_rng(seed)
         self.pyrng = random.Random(seed)
         self.learner = CallLearner(global_model, self.rng)

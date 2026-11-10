@@ -89,6 +89,56 @@ seslendirmeyi tarayıcı yapar, duygu analizi simüle edilir. Öğrenme algoritm
 | `MAX_TURNS` | `9` | Bir görüşmedeki en fazla asistan turu |
 | `FORCE_MOCK` | | `1` verilirse anahtar olsa bile demo modunda çalışır |
 
+## Lokal mod: kota yok, bulut yok (Aşama 0)
+
+`.env` dosyasına `SAGLAYICI=lokal` satırını eklersen uygulama hiçbir bulut servisine gitmez; bütün modeller
+bilgisayarında çalışır. GPU gerekmez. İlk kurulumda `baslat.bat` anahtar sorduğunda `lokal` yazarak da seçebilirsin.
+
+| İş | Lokal model | CPU'da süre (4 çekirdek, ölçülen) |
+|---|---|---|
+| Diyalog (asistan + müşteri) | **Ollama** üzerinden `qwen2.5:3b` (JSON şemalı çıktı) | cevap başına ~3-6 sn (tahmini, makineye bağlı) |
+| Ses → metin | **faster-whisper** `small` (int8) | ~1,4 sn / cümle |
+| Sesten duygu | `superb/wav2vec2-base-superb-er` | ~0,1 sn |
+| Metinden duygu | `savasy/bert-base-turkish-sentiment-cased` | ~0,03 sn |
+| Churn niyeti, konu | Türkçe anahtar kelime kuralları | anlık |
+| Seslendirme | **Piper** `tr_TR-dfki-medium` (hız, ses yüksekliği, perde ile tonlama) | ~0,2 sn |
+
+Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn sürer.
+
+**Kurulum (Windows):**
+1. Ollama'yı kur: https://ollama.com/download
+2. `.env` dosyasına `SAGLAYICI=lokal` satırını ekle.
+3. `baslat.bat`'ı çalıştır. Lokal paketleri (torch, whisper, transformers, piper) kurar ve Ollama modelini indirir.
+   Uygulama açılınca diğer modeller arka planda Hugging Face'ten iner; panelde "Modeller yükleniyor…" rozeti görünür.
+   İlk açılışta toplam ~3 GB indirme olur, sonraki açılışlar internetsiz çalışır.
+
+Şirket ağında `huggingface.co`, `*.hf.co` ve `ollama.com` erişimi gerekebilir. Proxy varsa `.env`'e
+`HTTPS_PROXY=http://proxy:port` eklenebilir. Modeller indikten sonra tamamen çevrimdışı çalışmak için `.env`'e
+`HF_HUB_OFFLINE=1` eklenebilir.
+
+**Ayarlar (`.env`):**
+
+| Değişken | Varsayılan | Açıklama |
+|---|---|---|
+| `SAGLAYICI` | `gemini` | `lokal` yapınca bulut kullanılmaz |
+| `LOKAL_LLM` | `qwen2.5:3b` | Ollama modeli. Türkçe kalitesi yetmezse `gemma3:4b` veya `qwen2.5:7b` dene (daha yavaş) |
+| `LOKAL_WHISPER` | `small` | `base` daha hızlı, `medium` daha doğru |
+| `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
+| `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama başka makinedeyse |
+
+**Testte görülen sınırlamalar (Aşama 2'de eğitilecek kısımlar):**
+* **Metin duygu modeli** ürün yorumlarıyla eğitilmiş; kelimelere bakıyor. "Tamam, kaydı açtınız ama ne zaman gelecekler?"
+  cümlesini +0,89 (olumlu) okudu. Çağrı merkezi verisiyle ince ayar gerekiyor.
+* **Ses duygu modeli** İngilizce oyunculu konuşmayla eğitilmiş; Türkçe öfkeli müşteriyi "mutlu" (%59) sınıfladı.
+  Bu yüzden füzyonda ağırlığı düşük (valensin %40'ı). Türkçe duygulu konuşma verisiyle ince ayar gerekiyor.
+* **Piper'da tek Türkçe ses** var; konuşmacılar perde farkıyla ayrılıyor ve ses duyguyu gerçekten taşımıyor
+  (yalnızca hız ve ses yüksekliği değişiyor). Duygulu ve farklı sesler için XTTS veya Chatterbox gibi bir model gerekir.
+* Churn niyeti ve konu şimdilik anahtar kelime kurallarıyla bulunuyor.
+
+Raporlarda lokal analiz "lokal: ses + metin" olarak görünür. Metin ve ses modellerinin ayrı çıktıları da
+`rapor.json` içinde `lokal_ayrinti` alanında durur; böylece iki sağlayıcıyı raporlarla karşılaştırabilirsin.
+
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 
 * **Ücretsiz katmanda TTS kotası çok düşük:** model başına günde yalnızca birkaç seslendirme. Bir sesli
@@ -151,7 +201,8 @@ Hızlı simülasyon ("60 görüşme simüle et") görüşmeleri rapor üretmez.
 | `core/emotion.py` | Akustik özellikler + Gemini ses ve duygu analizi |
 | `core/call.py` | Görüşme döngüsü, müşteri ve asistan ajanları, araçlar |
 | `core/catalog.py` | Stratejiler, tonlar, sorunlar, araçlar, müşteri profilleri |
-| `core/llm.py` | Gemini sarmalayıcısı (JSON çıktı, ses girişi, TTS) |
+| `core/llm.py` | Gemini sarmalayıcısı (JSON çıktı, ses girişi, TTS); lokal modda `core/local.py`'a yönlendirir |
+| `core/local.py` | Lokal sağlayıcı: Ollama, faster-whisper, duygu modelleri, Piper |
 | `app.py` | FastAPI sunucusu |
 | `static/index.html` | Panel |
 

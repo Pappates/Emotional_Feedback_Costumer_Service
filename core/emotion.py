@@ -84,6 +84,15 @@ def acoustic_features(wav_bytes: bytes, transcript: str = "") -> dict:
 
 
 def analyze_audio(wav_bytes: bytes) -> dict:
+    if llm.config.PROVIDER == "lokal":
+        from . import local
+        text = local.transcribe(wav_bytes)
+        feats = acoustic_features(wav_bytes, text)
+        out = local.analyze(text, wav_bytes, feats)
+        out["akustik"] = feats
+        out["uyarilma_gemini"] = None      # lokal modda Gemini kanalı yok; füzyon local.analyze içinde
+        out["kaynak"] = "lokal: ses + metin"
+        return out
     r: GeminiEmotion = llm.generate_json(
         SYSTEM, "Bu ses kaydındaki müşteriyi analiz et.", GeminiEmotion, audio_wav=wav_bytes, temperature=0.2
     )
@@ -99,6 +108,12 @@ def analyze_audio(wav_bytes: bytes) -> dict:
 
 
 def analyze_text(text: str) -> dict:
+    if llm.config.PROVIDER == "lokal":
+        from . import local
+        out = local.analyze(text, None, None)
+        out["akustik"] = {}
+        out["kaynak"] = "lokal: yalnızca metin"
+        return out
     r: GeminiEmotion = llm.generate_json(
         SYSTEM, f"Müşterinin söyledikleri (yalnızca metin, ses yok):\n\"{text}\"", GeminiEmotion, temperature=0.2
     )

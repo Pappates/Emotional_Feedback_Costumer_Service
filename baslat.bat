@@ -27,9 +27,14 @@ if not exist ".env" (
   echo.
   echo Gemini API anahtarinizi yapistirin ^(https://aistudio.google.com/apikey^).
   echo Bos birakip Enter'a basarsaniz uygulama demo modunda calisir.
+  echo Bulut yerine bilgisayardaki lokal modelleri kullanmak icin "lokal" yazin.
   set /p "KEY=Anahtar: "
   call :writeenv
 )
+
+rem --- Lokal mod (.env icinde SAGLAYICI=lokal) ---
+findstr /i /r "^SAGLAYICI=lokal" ".env" >nul 2>nul
+if not errorlevel 1 call :lokal
 
 echo.
 echo Uygulama baslatiliyor: http://localhost:8000  ^(kapatmak icin bu pencereyi kapatin^)
@@ -39,5 +44,27 @@ pause
 exit /b 0
 
 :writeenv
+if /i "%KEY%"=="lokal" (> ".env" echo SAGLAYICI=lokal& exit /b 0)
 if defined KEY (> ".env" echo GEMINI_API_KEY=%KEY%) else (> ".env" echo # GEMINI_API_KEY=buraya_anahtar)
+exit /b 0
+
+:lokal
+if not exist ".venv\lokal-kurulu.txt" (
+  echo.
+  echo Lokal model paketleri kuruluyor ^(torch, whisper, transformers, piper^). Ilk seferde 5-10 dakika surebilir...
+  ".venv\Scripts\python.exe" -m pip install -r requirements-lokal.txt -q || (echo [HATA] Lokal paketler kurulamadi. Internet/proxy ayarlarini kontrol edin. & pause & exit /b 1)
+  > ".venv\lokal-kurulu.txt" echo ok
+)
+set "LLM=qwen2.5:3b"
+for /f "usebackq tokens=1,* delims==" %%a in (".env") do if /i "%%a"=="LOKAL_LLM" set "LLM=%%b"
+where ollama >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo [UYARI] Ollama bulunamadi. Diyalog modeli icin Ollama gerekli:
+  echo   1^) https://ollama.com/download adresinden kurun
+  echo   2^) Bu pencereyi kapatip baslat.bat'i yeniden calistirin ^(model otomatik indirilir^)
+  echo.
+  exit /b 0
+)
+ollama list | findstr /i /c:"%LLM%" >nul || (echo %LLM% modeli indiriliyor ^(ilk sefer, ~2 GB^)... & ollama pull %LLM%)
 exit /b 0

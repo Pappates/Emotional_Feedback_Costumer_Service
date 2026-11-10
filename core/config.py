@@ -38,5 +38,16 @@ AGENT_VOICE = os.getenv("AGENT_VOICE", "Sulafat")
 MAX_TURNS = int(os.getenv("MAX_TURNS", "9"))
 
 
+# Model sağlayıcısı: "gemini" (bulut) ya da "lokal" (Ollama + Hugging Face modelleri, kota yok, GPU gerekmez)
+PROVIDER = os.getenv("SAGLAYICI", "gemini").strip().lower()
+
+
+def default_mode() -> str:
+    """Görüşmelerin varsayılan modu: lokal | gemini | mock (demo)."""
+    if PROVIDER == "lokal":
+        return "lokal"
+    return "gemini" if has_gemini() else "mock"
+
+
 def has_gemini() -> bool:
     return bool(API_KEY) and os.getenv("FORCE_MOCK", "") != "1"
