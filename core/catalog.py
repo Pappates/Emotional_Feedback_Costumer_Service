@@ -62,10 +62,16 @@ TONES = {
 
 # --- Müşteri sorunları ve onları çözen araçlar ------------------------------
 ISSUES = {
-    "internet_kesintisi": {"ad": "İnternet kesintisi", "cozen": ["ariza_kaydi_ac", "teknisyen_randevusu"]},
-    "hiz_sorunu": {"ad": "İnternet hızı düşük", "cozen": ["hat_optimizasyonu", "ariza_kaydi_ac"]},
-    "fatura_itirazi": {"ad": "Fatura itirazı", "cozen": ["fatura_incele_iade"]},
-    "nakil": {"ad": "Adres nakli", "cozen": ["nakil_islemi"]},
+    # detay: müşteri ajanına sorunu somut anlatabilmesi için verilen ayrıntı (küçük modeller somut bilgi olmadan
+    # yeni konuyu açmıyor, eski konuda dönüp duruyordu)
+    "internet_kesintisi": {"ad": "İnternet kesintisi", "cozen": ["ariza_kaydi_ac", "teknisyen_randevusu"],
+                           "detay": "İki gündür internet tamamen kesik; modemde ışık yanıp sönüyor."},
+    "hiz_sorunu": {"ad": "İnternet hızı düşük", "cozen": ["hat_optimizasyonu", "ariza_kaydi_ac"],
+                   "detay": "Akşamları hız 100 Mbps yerine 5-10 Mbps'e düşüyor, görüntülü görüşmeler kopuyor."},
+    "fatura_itirazi": {"ad": "Fatura itirazı", "cozen": ["fatura_incele_iade"],
+                       "detay": "Bu ayki faturada hiç kullanmadığın 240 TL'lik bir 'ek paket' ücreti var."},
+    "nakil": {"ad": "Adres nakli", "cozen": ["nakil_islemi"],
+              "detay": "Gelecek ay yeni adrese taşınıyorsun; aboneliğin oraya taşınması gerekiyor."},
 }
 
 TOOLS = {

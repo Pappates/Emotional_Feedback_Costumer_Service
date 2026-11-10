@@ -124,6 +124,9 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     t = re.sub(r"\[[^\]]{1,25}\]|\{[^}]{1,25}\}", "", t)          # "[adres]", "{mesaj}" gibi şablon kalıntıları
     t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*\)", "", t, flags=re.I)  # geçmişteki notları okumasın
     t = t.translate(_CYRILLIC)                                       # "Haklıсыз" gibi karışan Kiril harfleri
+    t = re.sub(r"[\u3000-\u9fff\uac00-\ud7af\u0600-\u06ff]+", "", t)  # araya karışan Çince/Korece/Arapça karakterler
+    t = re.sub(r"[”\"'}{\]\[]{2,}", "", t)                          # '”}”}”}' gibi JSON kalıntıları
+    t = re.sub(r"[”\"]+$", "", t.strip())
     t = re.sub(r"\s+([,.!?])", r"\1", t)
     t = re.sub(r"\s+", " ", t).strip().strip('"').strip()
     sents = re.split(r"(?<=[.!?…])\s+", t)
@@ -301,8 +304,11 @@ class Call:
                      "Henüz vedalaşma ve telefonu kapatacağını söyleme.")
         else:
             iss = ISSUES[self.current_issue]["ad"]
+            det = ISSUES[self.current_issue]["detay"]
             yeni = self.issue_idx > 0 and self.current_issue not in self.mentioned
-            gorev = (f"Şu an konuştuğun sorun: {iss}." + (" Önceki sorunun çözüldü; şimdi bu YENİ sorunu ilk kez gündeme getir." if yeni else ""))
+            gorev = (f"Şu an konuştuğun sorun: {iss} ({det})."
+                     + (f" Önceki sorunun çözüldü. Artık ondan bahsetme; şimdi bu YENİ sorunu ({iss}) açıkça gündeme getir."
+                        if yeni else ""))
             if self.mood < -0.6:
                 gorev += " Başka operatöre geçmeyi düşündüğünü ima edebilirsin."
 
@@ -332,6 +338,9 @@ class Call:
         else:
             hist = None
         last_agent = next((h["metin"] for h in reversed(self.history) if h["rol"] == "asistan"), "")
+        own_prev = [h["metin"] for h in self.history if h["rol"] == "müşteri"][-3:]
+        must_raise = (self.mode == "lokal" and not ending and not all_done and self.issue_idx > 0
+                      and self.current_issue not in self.mentioned)
         self._customer_fallback = False
         schema = LocalCustomerReply if self.mode == "lokal" else CustomerReply
         for attempt in range(2):
@@ -348,8 +357,24 @@ class Call:
             bad = (len(text.split()) < (4 if not self.history else 1) or _similar(text, last_agent) > 0.5
                    or (self.mode == "lokal" and low.rstrip(".!") in self.p["karakter"].lower())
                    or any(p in low for p in AGENT_PHRASES) or low.startswith(self.p["ad"].lower()))
-            if not bad:
+            # Lokal modda: kendi önceki sözlerini tekrarlıyorsa ya da yeni sorunu açması gerekirken açmıyorsa
+            repeat = self.mode == "lokal" and any(_similar(text, p) > 0.6 for p in own_prev)
+            missing = False
+            if must_raise and not bad:
+                from . import local
+                missing = local.text_cues(text)["konu"] != self.current_issue
+            if not (bad or repeat or missing):
                 return text
+            if repeat:
+                prompt += (" DİKKAT: Bunu zaten söyledin ve temsilci cevap verdi. Kendini tekrarlama; "
+                           "temsilcinin son cevabına tepki ver ya da konuyu ilerlet.")
+            if missing:
+                prompt += (f" DİKKAT: Şimdi mutlaka yeni sorunundan bahset: {ISSUES[self.current_issue]['detay']}")
+            if repeat or missing:
+                print(f"[koruma] müşteri cevabı reddedildi ({'kendini tekrar' if repeat else 'yeni sorunu açmadı'}): {text[:70]!r}", flush=True)
+                if attempt == 1 and not bad:
+                    return text      # ikinci deneme de böyleyse yine de kullan (hazır cümleden iyidir)
+                continue
             print(f"[koruma] müşteri cevabı reddedildi (tekrar/rol karışması): {text[:80]!r}", flush=True)
             prompt += (" DİKKAT: Önceki denemende temsilcinin sözlerini tekrarladın ya da temsilci gibi konuştun. "
                        "Sen müşterisin; kendi derdini kendi ağzından anlat.")
@@ -547,6 +572,13 @@ class Call:
         if len(out.get("ic_ses", "")) < 10 or _similar(out["ic_ses"], out["cevap"]) > 0.7:
             out["ic_ses"] = f"{STRATEGIES[s]['ad']} stratejisini uyguluyorum."
         out["metinden_araclar"] = []
+        if self.mode == "lokal" and out["araclar"]:
+            # küçük model ilgisiz araç çağırabiliyor (ör. taşınmayan müşteriye nakil): açık sorunlarla ilgisizleri at
+            open_issues = [i for i in self.revealed_issues() if i not in self.resolved]
+            keep = [t for t in out["araclar"] if t == "kampanya_tanimla" or any(t in ISSUES[i]["cozen"] for i in open_issues)]
+            if keep != out["araclar"]:
+                print(f"[koruma] ilgisiz araç atlandı: {sorted(set(out['araclar']) - set(keep))}", flush=True)
+            out["araclar"] = keep
         if self.mode == "lokal" and not out["araclar"]:
             low = ascii_tr(out["cevap"])
             open_issues = [i for i in self.revealed_issues() if i not in self.resolved]

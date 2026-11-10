@@ -176,7 +176,9 @@ Raporlarda lokal analiz "lokal: ses + metin" olarak görünür. Metin ve ses mod
 
 Panelden yapılan her görüşme bittiğinde arka tarafta otomatik bir rapor oluşur:
 `data/raporlar/<görüşme id>/` içinde **rapor.html** (okunabilir rapor), **rapor.csv** (Excel için, `;` ayraçlı,
-ondalık virgüllü) ve **rapor.json** (ham veri). Görüşme bitince panelde "Detaylı duygu raporunu aç" linki çıkar;
+ondalık virgüllü) ve **rapor.json** (ham veri). Rapor sayfasındaki **HTML indir** linki raporu tek başına açılabilen bir dosya
+olarak indirir (grafikler ve stil dosyanın içinde; yalnızca ses kaydı linkleri uygulama açıkken çalışır), böylece
+e-postayla ya da sohbette paylaşılabilir. Görüşme bitince panelde "Detaylı duygu raporunu aç" linki çıkar;
 tüm görüşmelerin karşılaştırması için panelin sağ üstündeki **Tüm raporlar** sayfası (`/raporlar`) kullanılır.
 
 Raporda her tur için:

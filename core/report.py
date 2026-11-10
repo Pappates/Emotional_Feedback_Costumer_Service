@@ -392,7 +392,7 @@ def to_html(rep: dict) -> str:
 
     return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Duygu Raporu · {E(rep["musteri"])}</title><style>{CSS}</style></head><body><main>
-<p class="crumb"><a href="/raporlar">← Tüm raporlar</a> · <a href="/raporlar/{rep["id"]}/csv">CSV indir</a> · <a href="/raporlar/{rep["id"]}/json">JSON</a></p>
+<p class="crumb"><a href="/raporlar">← Tüm raporlar</a> · <a href="/raporlar/{rep["id"]}/html">HTML indir</a> · <a href="/raporlar/{rep["id"]}/csv">CSV indir</a> · <a href="/raporlar/{rep["id"]}/json">JSON</a></p>
 <h1>Duygu analizi raporu: {E(rep["musteri"])}</h1>
 <p class="sub">{E(rep["ozet_profil"])}<br>{"<b>Kayıtlı görüşmeden üretildi.</b> " if rep.get("kayittan") else ""}Görüşme <code>{rep["id"]}</code> · {E(rep["tarih"].replace("T", " "))} · mod: {E(rep["mod"])}{" (sesli)" if rep["sesli"] else ""}
  · bağlam: {E(rep["baglam"] or "–")} · {rep["asistan_turu"]} asistan turu · sonuç: <b class="{"ok" if rep["sonuc"] == "kaldi" else "bad"}">{SONUC.get(rep["sonuc"], rep["sonuc"])}</b>
@@ -563,7 +563,7 @@ def index_html() -> str:
         f'<td class="num">{_f(r["metrikler"]["algi_mae"], sign=False)}</td><td class="num">{_f(r["metrikler"]["algi_korelasyon"])}</td>'
         f'<td class="num">{"–" if r["metrikler"]["yon_uyumu"] is None else "%" + format(r["metrikler"]["yon_uyumu"] * 100, ".0f")}</td>'
         f'<td class="num">{_f(r["metrikler"]["ort_ham_odul"])}</td>'
-        f'<td><a href="/raporlar/{r["id"]}/csv">CSV</a></td></tr>' for r in reps)
+        f'<td><a href="/raporlar/{r["id"]}/html">HTML</a> · <a href="/raporlar/{r["id"]}/csv">CSV</a></td></tr>' for r in reps)
 
     # Toplu istatistik
     agg = ""

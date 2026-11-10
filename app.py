@@ -175,6 +175,14 @@ def report_html(rid: str):
     return _report_file(rid, "rapor.html").read_text(encoding="utf-8")
 
 
+@app.get("/raporlar/{rid}/html")
+def report_html_download(rid: str):
+    """Raporu tek başına açılabilen HTML dosyası olarak indirir (CSS ve grafikler dosyanın içinde)."""
+    data = _report_file(rid, "rapor.html").read_bytes()
+    return Response(data, media_type="text/html; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="duygu-raporu-{rid}.html"'})
+
+
 @app.get("/raporlar/{rid}/csv")
 def report_csv(rid: str):
     data = _report_file(rid, "rapor.csv").read_bytes()
