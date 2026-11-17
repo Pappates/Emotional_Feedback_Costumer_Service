@@ -132,6 +132,7 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_TTS` | `piper` | Asistan sesi motoru: `piper` (hızlı) ya da `chatterbox` (doğal ama yavaş) |
 | `LOKAL_ASISTAN_SESI` | `dfki` | Asistanın Piper sesi: `dfki`, `fahrettin`, `99eren99` (erkek) ya da `fettah` (kadın) |
 | `LOKAL_CHATTERBOX_SES` | (modelin sesi) | Chatterbox için ses örneği (WAV yolu); asistanın sesi bu örnekten klonlanır |
+| `LOKAL_ASR_SOZLUK` | `1` | Whisper'a alan sözlüğü verilir (POS, iade, fatura…); `0` kapatır |
 
 **Küçük modellerle yaşanan sorunlar ve alınan önlemler** (gerçek modellerle test edildi):
 
@@ -233,6 +234,41 @@ Gemini ve demo modu eskisi gibi tek seferde çalışır. Kayıttan tekrar oynatm
 * **En doğal ses** Chatterbox: modern bir model, duygu yoğunluğu ayarı (asistanın tonuna bağlandı) ve ses klonlama var.
   CPU'da yavaş olduğu için isteğe bağlı; sunum için önceden kayıt almaya uygun (kayıtlar API'siz tekrar oynatılır).
 
+## Aşama 1: ölçüm temeli ve model seçimi
+
+Amaç: ince ayardan (Aşama 2) önce **neyi, neyle ölçeceğimizi** ve **hangi modeli** eğiteceğimizi belirlemek.
+
+### Psikolojik katman (`core/psych.py`)
+Valens/uyarılmaya PAD modelinin üçüncü boyutu **baskınlık** (talepkâr ↔ çaresiz) ve değerlendirme (appraisal) kuramına
+göre dört yorum boyutu eklendi: **suç yükleme** (kurum/durum/kendisi), **belirsizlik**, **kontrol kaybı**, **haksızlık algısı**
+(+ vazgeçmişlik). Bunlardan çağrı merkezi kategorisi türetilir: öfke, hayal kırıklığı, kaygı, kafa karışıklığı,
+**küskünlük** (sessiz churn), rahatlama, memnuniyet. Her kategori için bir yaklaşım önerilir (örn. belirsizlik → teknik
+açıklama, haksızlık → telafi). Strateji seçimini yine öğrenen asistan yapar; öneri yalnızca konuşma biçimini etkiler
+ve raporda seçimle karşılaştırılır. Raporda her turda "Psikolojik değerlendirme" bölümü, CSV'de yeni sütunlar var.
+
+### Gerçek ses test seti (`/etiket`)
+Paneldeki **Test seti etiketleme** bağlantısı: ekip arkadaşları 24 senaryo kartını (her kategori ve değerlendirme
+birleşimi) tarayıcıdan kaydeder, en az 3 kişi her kaydı SAM ölçeğiyle (1-9) valens/uyarılma/baskınlık, kategori ve
+değerlendirme boyutlarıyla puanlar. Sayfa etiketleyiciler arası uyumu (Krippendorff α, ≥0,667 kabul edilebilir) ve
+mevcut modelin bu setteki başarısını (CCC, kategori UAR) gösterir. Kayıtlar yalnızca `data/etiket` altında kalır,
+GitHub'a gönderilmez. Hedef: 5-8 konuşmacı × 24 kart ≈ 120-200 kayıt.
+
+### Simülasyon ve ses düzeltmeleri
+* **Müşteri metni ruh haliyle tutarlı:** sakinleşen müşteri hâlâ bağırıyordu (raporda gerçek +0,29, algı −0,43).
+  Her ruh hali için somut konuşma tarzı veriliyor; üretilen cümle metin duygu modeliyle denetleniyor, uyumsuzsa yeniden üretiliyor.
+* **Duyguya göre Piper ayarı:** hız, ses seviyesi (artık tepe değere değil konuşma seviyesine göre) ve canlılık
+  (noise) ruh haline bağlandı. eGeMAPS ölçümü: öfkeli ile kararsız arasındaki ses yüksekliği farkı 1,29/0,96 → 1,22/0,57.
+  Sınır: Piper'da tonlama eğrisi kontrol edilemiyor, perde değişkenliği duyguyla artmıyor (Aşama 3: duygulu TTS eğitimi).
+* **Whisper alan sözlüğü:** "POS" → "Post", "iade" → "Yadem" hataları için kısa bağlam cümlesi. 3 ses × 10 cümlede
+  kelime hata oranı %30,7 → %16,9.
+
+### Omurga (backbone) seçimi (`egitim/`)
+`ser_bench.py` + `ser_eval.py`: aday modeller TurEV-DB'de (6 konuşmacı, 1735 kayıt, 4 duygu) donmuş öznitelik +
+lojistik regresyonla, **konuşmacı-dışarıda** doğrulamayla karşılaştırılır (katman seçimi test konuşmacısını görmez).
+`egitim/ser_model_secimi.ipynb` aynı karşılaştırmayı Colab GPU'sunda tüm adaylarla tekrarlar.
+
+Sonuçlar (CPU ölçümü sürüyor) bu bölüme eklenecek. Colab not defteri aynı karşılaştırmayı GPU ile ~15-25 dakikada yapar.
+
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 
 * **Ücretsiz katmanda TTS kotası çok düşük:** model başına günde yalnızca birkaç seslendirme. Bir sesli
@@ -299,8 +335,12 @@ Hızlı simülasyon ("60 görüşme simüle et") görüşmeleri rapor üretmez.
 | `core/catalog.py` | Stratejiler, tonlar, sorunlar, araçlar, müşteri profilleri |
 | `core/llm.py` | Gemini sarmalayıcısı (JSON çıktı, ses girişi, TTS); lokal modda `core/local.py`'a yönlendirir |
 | `core/local.py` | Lokal sağlayıcı: Ollama, faster-whisper, duygu modelleri, Piper |
+| `core/psych.py` | Psikolojik katman: baskınlık, değerlendirme boyutları, çağrı merkezi kategorileri |
+| `core/etiket.py` | Gerçek ses test seti: kayıt, etiket, Krippendorff alfa, CCC ölçümü |
 | `app.py` | FastAPI sunucusu |
 | `static/index.html` | Panel |
+| `static/etiket.html` | Test seti kayıt ve etiketleme sayfası (`/etiket`) |
+| `egitim/` | Model seçimi (omurga karşılaştırması) betikleri ve Colab not defteri |
 
 ## Sınırlamalar ve sonraki adımlar
 
