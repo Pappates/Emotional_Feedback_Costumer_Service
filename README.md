@@ -127,6 +127,7 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
 | `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
 | `OLLAMA_URL` | (otomatik) | Verilirse uygulama kendi Ollama sunucusunu açmaz, bu adresi kullanır |
+| `LOKAL_GECMIS` | `4` | Lokal modda modele verilen son mesaj sayısı (fazlası promptu ve bekleme süresini büyütür) |
 | `LOKAL_OZEL_OLLAMA` | `1` | `0` yapılırsa önbellek ayarlı özel Ollama sunucusu başlatılmaz |
 | `LOKAL_TTS` | `piper` | Asistan sesi motoru: `piper` (hızlı) ya da `chatterbox` (doğal ama yavaş) |
 | `LOKAL_ASISTAN_SESI` | `dfki` | Asistanın Piper sesi: `dfki`, `fahrettin`, `99eren99` (erkek) ya da `fettah` (kadın) |
@@ -180,6 +181,12 @@ geçmişi her seferinde baştan işleniyordu. Yapılanlar:
 | Ollama'da `OLLAMA_NUM_PARALLEL=2`: asistan ve müşteri ayrı önbellek "slot"u kullanıyor | 1016 tokenlik promptun yalnızca ~250'si yeniden işleniyor |
 | Lokal modda "iç ses" modele yazdırılmıyor, cevaplar en fazla 2 cümle | Üretilen token 95-126 → 50-67 |
 | **Toplam** | **Asistan cevabı 32-43 sn → 14-20 sn** (aynı makine, aynı model) |
+
+**Kısa prompt (lokal mod, varsayılan):** kullanıcı makinesindeki ölçümlerde Ollama, Gemma 3 ile konuşma geçmişini turdan
+tura önbellekten güvenilir şekilde kullanamadı (yalnızca aynı rolün art arda çağrılarında kullanıldı); büyüyen geçmiş
+her turda baştan işlendi (1124 token = 16 sn). Bu yüzden lokal modda sistem promptu ~480 → ~200 tokene indirildi, yalnızca
+son 4 mesaj tutuluyor (`LOKAL_GECMIS`), daha eskisi tek satırlık "yapılanlar" özetiyle veriliyor. Prompt artık turdan
+tura büyümüyor (testte 300-670 token).
 
 **Önbellek ayarını uygulama kendisi yapar:** `OLLAMA_NUM_PARALLEL=2` ile kendi Ollama sunucusunu 11435 portunda
 başlatır (modeller aynı klasörden okunur, yeniden indirilmez). Ortam değişkeni ayarlamak ya da Ollama'yı yeniden

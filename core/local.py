@@ -223,8 +223,11 @@ def _log_timing(out: dict):
         return
     LLM_STATS.append(st)
     del LLM_STATS[:-50]
-    big = [x for x in LLM_STATS[-4:] if x["islenen_prompt"] > 600]
-    if len(LLM_STATS) >= 5 and len(big) >= 2 and not STATUS.get("_onbellek_uyarisi"):
+    # Not: Ollama'nın prompt_eval_count'u önbellekten gelen tokenleri de sayabiliyor; asıl gösterge işleme hızı
+    # (önbellekte ~1000+ token/sn, baştan işlenince CPU'da ~70-100 token/sn). Lokal modda prompt zaten kısa tutulduğu
+    # için bu uyarı yalnızca bilgi amaçlı.
+    slow = [x for x in LLM_STATS[-4:] if x["islenen_prompt"] > 700 and x["prompt_sn"] > x["islenen_prompt"] / 250]
+    if len(LLM_STATS) >= 5 and len(slow) >= 2 and not STATUS.get("_onbellek_uyarisi"):
         STATUS["_onbellek_uyarisi"] = "1"
         print("[lokal] UYARI: Ollama önbelleği kullanılmıyor gibi görünüyor (konuşma geçmişi her turda baştan işleniyor). "
               f"Şu anki sunucu: {OLLAMA_URL} ({STATUS.get('ollama_sunucu', '?')}). Özel sunucu açılamadıysa nedeni "

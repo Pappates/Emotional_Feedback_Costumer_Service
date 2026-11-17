@@ -9,6 +9,7 @@ Tur sırası:  müşteri açılış -> [asistan -> müşteri] x N
 """
 from __future__ import annotations
 
+import os
 import random
 import re
 import uuid
@@ -104,6 +105,18 @@ _ASCII = str.maketrans("ıİşŞğĞüÜöÖçÇâÂ", "iissgguuoocc" + "aa")
 def ascii_tr(s: str) -> str:
     return (s or "").translate(_ASCII).lower()
 
+
+# Lokal (CPU) modda prompt boyu doğrudan bekleme süresi: kullanıcının makinesinde prompt saniyede ~70-100 token
+# işleniyor ve Ollama, Gemma 3'te konuşma geçmişini önbellekten güvenilir şekilde kullanamadı (her turda baştan
+# işledi, 1100+ token = 16 sn). Bu yüzden lokal modda kısa sistem promptu + son N mesaj + tek satırlık durum özeti.
+LOCAL_HISTORY = int(os.getenv("LOKAL_GECMIS", "4"))
+LOCAL_AGENT_SYSTEM = (
+    "Sen Deniz, bir telekom şirketinin müşteri temsilcisisin. Telefonda kısa, doğal Türkçe konuş; amacın sorunu gerçekten "
+    "çözmek. Yalnızca müşterinin söylediği sorun için işlem yap, işlemi tekrarlama, yapmadığın işlem için 'yaptım' deme, "
+    "işlem adlarını söyleme. Kurallar (dışında saat, süre, tutar uydurma): ariza_kaydi_ac: saha ekibi 4 saatte gelir. "
+    "teknisyen_randevusu: bugün 16-18 arası. hat_optimizasyonu: uzaktan, hız 100 Mbps. fatura_incele_iade: hatalı 240 TL "
+    "sonraki faturaya iade. nakil_islemi: 2 iş gününde aktif. kampanya_tanimla: 1 ay %30 indirim ve 50 GB. Para hesaba "
+    "yatırılamaz, fatura iptal edilemez.")
 
 # Asistanın uydurma söz vermemesi için işlemlerin gerçek sonuçları (TOOLS içindeki sonuç metinleriyle tutarlı)
 COMPANY_FACTS = ("Arıza kaydı açılınca saha ekibi 4 saat içinde müdahale eder. Teknisyen randevusu bugün 16:00-18:00 "
@@ -364,7 +377,7 @@ class Call:
             prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {yon} {gorev} "
                       f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}. "
                       "Müşteri olarak 1-2 kısa cümleyle cevap ver.")
-            hist = self._chat_history("müşteri")
+            hist = self._chat_history("müşteri", window=LOCAL_HISTORY)
         else:
             hist = None
         last_agent = next((h["metin"] for h in reversed(self.history) if h["rol"] == "asistan"), "")
@@ -416,7 +429,7 @@ class Call:
         bucket = 0 if self.mood < -0.5 else (1 if self.mood < 0 else 2)
         return MOCK_CUSTOMER[self.current_issue][bucket]
 
-    def _chat_history(self, me: str) -> list[dict]:
+    def _chat_history(self, me: str, window: int | None = None) -> list[dict]:
         """Konuşmayı `me` ajanının bakış açısından sohbet rollerine çevirir (kendi sözleri: assistant, karşı taraf: user).
         İşlem sonuçları asistanın kendi mesajına not olarak eklenir."""
         msgs: list[dict] = []
@@ -427,7 +440,7 @@ class Call:
                 continue
             role = "assistant" if h["rol"] == me else "user"
             msgs.append({"role": role, "content": h["metin"]})
-        return msgs
+        return msgs[-window:] if window else msgs
 
     # ------------------------------------------------------------ asistan turu
     def agent_turn(self) -> dict:
@@ -575,21 +588,19 @@ class Call:
         if self.mode == "lokal" and an.get("konu") in ISSUES:
             # Küçük model işlemi "yaptım" deyip aracı çağırmıyordu: asistanın KENDİ algıladığı konuyu çözen aracı açıkça söyle
             konu = an["konu"]
-            tool_hint = (f" Müşterinin şu anki konusu: {ISSUES[konu]['ad']}. Bunu gerçekten çözmek için 'araclar' listesine "
-                         f"{' ya da '.join(ISSUES[konu]['cozen'])} yaz; listeye yazmadığın işlemi 'yaptım' diye söyleme.")
+            tool_hint = (f" Açık konu: {ISSUES[konu]['ad']} -> araclar: {' ya da '.join(ISSUES[konu]['cozen'])}.")
         if self.mode == "lokal":
-            # Hız: CPU'da prompt işleme saniyede ~95 token. Sistem promptu ve konuşma geçmişi turdan tura aynı kaldığı
-            # sürece Ollama bunları önbellekten kullanır; bu yüzden sabit her şey (araç listesi, kurallar) sistemde,
-            # yalnızca bu tura özgü kısa yönerge en sonda.
-            system += (" Araç adlarını (ör. ariza_kaydi_ac) müşteriye söyleme; yaptığın işlemi doğal cümleyle anlat."
-                       f" Kullanabileceğin araçlar:\n{tools_txt}")
-            prompt = (f"[YÖNERGE] Strateji: {STRATEGIES[s]['ad']} ({STRATEGIES[s]['talimat']}) "
-                      f"Ton: {TONES[t]['ad']} ({TONES[t]['yazim']}) "
-                      f"Müşterinin duygusu: {an['duygu']}, ayrılma riski %{an['churn_riski'] * 100:.0f}."
-                      + (f" YÖNETMEN UYARISI: {director}" if director else "") + tool_hint
-                      + " Müşterinin son mesajına temsilci olarak en fazla 2 kısa cümleyle cevap ver; "
-                        "müşterinin cümlelerini tekrarlama.")
-            hist = self._chat_history("asistan")
+            # Kısa sistem promptu + son birkaç mesaj + durum özeti (bkz. LOCAL_HISTORY açıklaması)
+            system = LOCAL_AGENT_SYSTEM
+            yapilan = sorted({TOOL_SPOKEN[re.match(r"\[(\w+)\]", h["metin"]).group(1)]
+                              for h in self.history if h["rol"] == "sistem" and re.match(r"\[(\w+)\]", h["metin"])
+                              and re.match(r"\[(\w+)\]", h["metin"]).group(1) in TOOL_SPOKEN})
+            prompt = (f"[YÖNERGE] Strateji: {STRATEGIES[s]['ad']} ({STRATEGIES[s]['talimat']}) Ton: {TONES[t]['ad']}. "
+                      f"Müşteri: {an['duygu']}, ayrılma riski %{an['churn_riski'] * 100:.0f}."
+                      + (f" UYARI: {director}" if director else "")
+                      + f" Yapılanlar: {', '.join(yapilan) or 'yok'}." + tool_hint
+                      + " En fazla 2 kısa cümleyle cevap ver; müşteriyi tekrarlama.")
+            hist = self._chat_history("asistan", window=LOCAL_HISTORY)
         else:
             hist = None
         last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
