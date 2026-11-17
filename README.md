@@ -258,6 +258,14 @@ değerlendirme boyutlarıyla puanlar. Sayfa etiketleyiciler arası uyumu (Krippe
 mevcut modelin bu setteki başarısını (CCC, kategori UAR) gösterir. Kayıtlar yalnızca `data/etiket` altında kalır,
 GitHub'a gönderilmez. Hedef: 5-8 konuşmacı × 24 kart ≈ 120-200 kayıt.
 
+### İnternetten gerçek Türkçe konuşma (YODAS2, `egitim/yodas_hazirla.py`)
+CC BY 3.0 lisanslı YouTube konuşmaları (YODAS2 Türkçe, otomatik altyazılı `tr100` bölümü). 3 parçadan 1.322 kesit
+(3-8 sn) ön etiketlendi: %80'i nötr (beklenen), duygulu kesitler ses modeline göre: üzgün 119, mutlu 79, öfkeli 34,
+tiksinti 13, korku 11, şaşkınlık 10. Seçim: 241 kesit (196 duygulu + 45 nötr, 101 farklı video, video başına en fazla 4).
+Ön etiket etiketleyiciye gösterilmez; özet sayfası "ön etiket ↔ insan" uyumunu ölçer. Paketi başka bilgisayara almak:
+`python egitim/yodas_hazirla.py ice-aktar yodas_tr_300.zip` (kaynak listesi `data/etiket/KAYNAKLAR_yodas.md`).
+Daha fazla duygulu kesit için daha çok parça: `topla --parcalar 3 4 5` (parça başına ~12 dk, ~65 duygulu kesit).
+
 ### Simülasyon ve ses düzeltmeleri
 * **Müşteri metni ruh haliyle tutarlı:** sakinleşen müşteri hâlâ bağırıyordu (raporda gerçek +0,29, algı −0,43).
   Her ruh hali için somut konuşma tarzı veriliyor; üretilen cümle metin duygu modeliyle denetleniyor, uyumsuzsa yeniden üretiliyor.

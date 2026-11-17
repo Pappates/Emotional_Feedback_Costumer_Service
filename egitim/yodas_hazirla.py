@@ -11,6 +11,9 @@ Adımlar
        python egitim/yodas_hazirla.py topla --bolum tr100 --parcalar 0 1 --cikti data/yodas
   2) sec: çeşitli ve duygu yoğun kesitleri seçip /etiket kayıtlarına aktarır, kaynak listesini yazar.
        python egitim/yodas_hazirla.py sec --cikti data/yodas --adet 300
+     --paket yodas_tr.zip verilirse aktarmak yerine taşınabilir bir paket üretir (başka bilgisayarda kullanmak için).
+  3) ice-aktar: paketi bu bilgisayardaki /etiket kayıtlarına ekler (aynı kesit iki kez eklenmez).
+       python egitim/yodas_hazirla.py ice-aktar yodas_tr.zip
 
 Bölümler: tr000 = elle yazılmış altyazı (çoğunlukla belgesel/eğitim), tr100 = otomatik altyazı (vlog, sohbet; daha doğal).
 Kaynak gösterme: data/yodas/KAYNAKLAR.md (video bağlantıları, CC BY 3.0). Veri git'e girmez (data/ altında).
@@ -180,34 +183,71 @@ def sec(a):
             if not g:
                 continue
             r = g[0]
-            is_neutral = r["ses_ust"] == "neutral" and r["kategori_on"] == "nötr"
+            is_neutral = r["ses_ust"] == "neutral"
             if is_neutral and sum(1 for p in picked if p["ses_ust"] == "neutral") >= quota_neutral:
                 g.pop(0)
                 continue
             picked.append(g.pop(0)); per_video[r["video"]] += 1
             if len(picked) >= a.adet:
                 break
-    for r in picked:
-        wav = (out / "ses" / f"{r['id']}.wav").read_bytes()
-        etiket.save_recording(wav, f"yt:{r['video']}", None, None,
-                              f"YODAS2 {r['parca']} · youtu.be/{r['video']}?t={int(r['baslangic'])} · CC BY 3.0",
-                              extra={"kaynak": "yodas2", "kaynak_id": r["id"], "lisans": "CC BY 3.0",
-                                     "video_url": f"https://www.youtube.com/watch?v={r['video']}&t={int(r['baslangic'])}s",
-                                     "metin": r["metin"], "on_etiket": {"kategori": r["kategori_on"], "ses_ust": r["ses_ust"],
-                                                                       "valens_ses": r["valens_ses"], "valens_metin": r["valens_metin"],
-                                                                       "uyarilma_ses": r["uyarilma_ses"]}})
-    # Kaynak gösterme (CC BY 3.0)
-    vids = sorted({r["video"] for r in picked} | {r.get("video") for r in []})
+    manifest = [_manifest_row(r) for r in picked]
+    vids = sorted({r["video"] for r in picked})
     lines = ["# Kaynaklar (YODAS2 Türkçe, CC BY 3.0)", "",
              "Ses kesitleri, YODAS2 veri setindeki (espnet/yodas2) Creative Commons Attribution 3.0 lisanslı YouTube "
              "videolarından alınmıştır. Her video:", ""]
     lines += [f"- https://www.youtube.com/watch?v={v}" for v in vids]
-    with (out / "KAYNAKLAR.md").open("a", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    if a.paket:
+        import zipfile
+        with zipfile.ZipFile(a.paket, "w", zipfile.ZIP_DEFLATED) as z:
+            for r in picked:
+                z.write(out / "ses" / f"{r['id']}.wav", f"ses/{r['id']}.wav")
+            z.writestr("kesitler.jsonl", "\n".join(json.dumps(m, ensure_ascii=False) for m in manifest) + "\n")
+            z.writestr("KAYNAKLAR.md", "\n".join(lines) + "\n")
+        print(f"Paket: {a.paket} ({os.path.getsize(a.paket) / 1e6:.1f} MB)")
+    else:
+        for r, m in zip(picked, manifest):
+            _import_one((out / "ses" / f"{r['id']}.wav").read_bytes(), m)
+        with (out / "KAYNAKLAR.md").open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
     c1 = Counter(r["ses_ust"] for r in picked)
     c2 = Counter(r["kategori_on"] for r in picked)
-    print(f"{len(picked)} kesit aktarıldı ({len(per_video)} farklı video).\nSes modeli üst sınıf: {dict(c1)}\n"
+    print(f"{len(picked)} kesit seçildi ({len(per_video)} farklı video).\nSes modeli üst sınıf: {dict(c1)}\n"
           f"Psikolojik ön kategori: {dict(c2)}\nKaynak listesi: {out / 'KAYNAKLAR.md'}")
+
+
+def _manifest_row(r: dict) -> dict:
+    return {"id": r["id"], "video": r["video"], "parca": r["parca"], "baslangic": r["baslangic"], "bitis": r["bitis"],
+            "metin": r["metin"], "on_etiket": {"kategori": r["kategori_on"], "ses_ust": r["ses_ust"],
+                                               "valens_ses": r["valens_ses"], "valens_metin": r["valens_metin"],
+                                               "uyarilma_ses": r["uyarilma_ses"]}}
+
+
+def _import_one(wav: bytes, m: dict):
+    from core import etiket
+    etiket.save_recording(wav, f"yt:{m['video']}", None, None,
+                          f"YODAS2 {m['parca']} · youtu.be/{m['video']}?t={int(m['baslangic'])} · CC BY 3.0",
+                          extra={"kaynak": "yodas2", "kaynak_id": m["id"], "lisans": "CC BY 3.0",
+                                 "video_url": f"https://www.youtube.com/watch?v={m['video']}&t={int(m['baslangic'])}s",
+                                 "metin": m["metin"], "on_etiket": m["on_etiket"]})
+
+
+def ice_aktar(a):
+    import zipfile
+    from core import etiket
+    existing = {r.get("kaynak_id") for r in etiket._read(etiket.KAYIT)}
+    n = 0
+    with zipfile.ZipFile(a.paket) as z:
+        for line in z.read("kesitler.jsonl").decode("utf-8").splitlines():
+            if not line.strip():
+                continue
+            m = json.loads(line)
+            if m["id"] in existing:
+                continue
+            _import_one(z.read(f"ses/{m['id']}.wav"), m)
+            n += 1
+        (ROOT / "data" / "etiket").mkdir(parents=True, exist_ok=True)
+        (ROOT / "data" / "etiket" / "KAYNAKLAR_yodas.md").write_bytes(z.read("KAYNAKLAR.md"))
+    print(f"{n} kesit /etiket kayıtlarına eklendi (zaten olanlar atlandı). Kaynak listesi: data/etiket/KAYNAKLAR_yodas.md")
 
 
 def main():
@@ -224,8 +264,11 @@ def main():
     s.add_argument("--adet", type=int, default=300)
     s.add_argument("--video-basina", dest="video_basina", type=int, default=4)
     s.add_argument("--tohum", type=int, default=0)
+    s.add_argument("--paket", help="aktarmak yerine bu zip dosyasına paketle")
+    i = sub.add_parser("ice-aktar")
+    i.add_argument("paket")
     a = p.parse_args()
-    {"topla": topla, "sec": sec}[a.komut](a)
+    {"topla": topla, "sec": sec, "ice-aktar": ice_aktar}[a.komut](a)
 
 
 if __name__ == "__main__":
