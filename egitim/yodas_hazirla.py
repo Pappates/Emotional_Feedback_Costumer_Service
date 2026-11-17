@@ -63,7 +63,8 @@ def _windows(segs, lo=3.0, hi=8.0, max_gap=0.6):
         cur.append(s)
     if cur and cur[-1][1] - cur[0][0] >= lo:
         out.append((cur[0][0], cur[-1][1], " ".join(x[2] for x in cur)))
-    return [w for w in out if len(w[2].split()) >= 4]
+    # "[Müzik]", "[Alkış]" gibi işaretli bölümler konuşma değil
+    return [w for w in out if len(w[2].split()) >= 4 and "[" not in w[2]]
 
 
 def _load_wav(raw: bytes) -> np.ndarray:
@@ -81,7 +82,9 @@ def topla(a):
     out = Path(a.cikti)
     (out / "ses").mkdir(parents=True, exist_ok=True)
     cand = out / "adaylar.jsonl"
-    done = {json.loads(l)["parca"] for l in cand.open(encoding="utf-8")} if cand.exists() else set()
+    prev = [json.loads(l) for l in cand.open(encoding="utf-8")] if cand.exists() else []
+    done = {r["parca"] for r in prev if r.get("bitti")}
+    seen_vid = {r["video"] for r in prev if "video" in r}
     rng = random.Random(a.tohum)
     for part in a.parcalar:
         tag = f"{a.bolum}/{part:08d}"
@@ -90,16 +93,35 @@ def topla(a):
             continue
         meta = json.load(urllib.request.urlopen(f"{BASE}/{a.bolum}/text/{part:08d}.json"))
         segs = {m["audio_id"]: _segments(m["text"]) for m in meta}
-        print(f"{tag}: {len(segs)} video, ses akışı açılıyor…", flush=True)
-        resp = urllib.request.urlopen(f"{BASE}/{a.bolum}/audio/{part:08d}.tar.gz")
         n_vid = n_clip = 0
-        with tarfile.open(fileobj=resp, mode="r|gz") as tf, cand.open("a", encoding="utf-8") as f:
+        for attempt in range(4):   # bağlantı koparsa baştan açılır, işlenmiş videolar atlanır (gzip akışı ortadan sürdürülemez)
+            try:
+                print(f"{tag}: {len(segs)} video, ses akışı açılıyor (deneme {attempt + 1})…", flush=True)
+                resp = urllib.request.urlopen(f"{BASE}/{a.bolum}/audio/{part:08d}.tar.gz", timeout=120)
+                n_vid, n_clip = _stream(resp, segs, seen_vid, cand, out, a, rng, tag, local, psych, n_vid, n_clip)
+                break
+            except (tarfile.ReadError, OSError, EOFError) as e:
+                print(f"{tag}: akış kesildi ({str(e)[:60]}); {n_vid} video işlendi, yeniden deneniyor", flush=True)
+        else:
+            print(f"{tag}: 4 denemede tamamlanamadı; işlenen kesitler saklandı, parça bitti sayılmadı", flush=True)
+            continue
+        # parça bittiğini işaretle (yarıda kesilirse yeniden işlenir)
+        with cand.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"parca": tag, "bitti": True}) + "\n")
+        print(f"{tag}: bitti ({n_vid} video, {n_clip} kesit)", flush=True)
+
+
+def _stream(resp, segs, seen_vid, cand, out, a, rng, tag, local, psych, n_vid, n_clip):
+    with tarfile.open(fileobj=resp, mode="r|gz") as tf, cand.open("a", encoding="utf-8") as f:
             for m in tf:
                 if not m.isfile():
                     continue
                 vid = Path(m.name).stem
+                if vid in seen_vid:
+                    continue
                 wins = _windows(segs.get(vid, []))
                 if not wins:
+                    seen_vid.add(vid)
                     continue
                 x = _load_wav(tf.extractfile(m).read())
                 rng.shuffle(wins)
@@ -122,13 +144,12 @@ def topla(a):
                         "kategori_on": ps["kategori"], "baskinlik_on": ps["baskinlik"],
                     }, ensure_ascii=False) + "\n")
                     n_clip += 1
+                f.flush()
+                seen_vid.add(vid)
                 n_vid += 1
                 if n_vid % 10 == 0:
                     print(f"{tag}: {n_vid} video, {n_clip} kesit", flush=True)
-        # parça bittiğini işaretle (yarıda kesilirse yeniden işlenir)
-        with cand.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"parca": tag, "bitti": True}) + "\n")
-        print(f"{tag}: bitti ({n_vid} video, {n_clip} kesit)", flush=True)
+    return n_vid, n_clip
 
 
 def sec(a):
@@ -139,13 +160,14 @@ def sec(a):
     existing = {r.get("kaynak_id") for r in etiket._read(etiket.KAYIT)}
     rows = [r for r in rows if r["id"] not in existing]
     rng = random.Random(a.tohum)
-    # Duygu yoğunluğu: sesin nötr olmayan olasılığı + metin valensinin şiddeti
+    rows = [r for r in rows if "[" not in r["metin"]]
+    # Duygu yoğunluğu: önce ses (nötr olmayan olasılık); otomatik altyazı cümle ortasından bölündüğü için metnin payı küçük
     for r in rows:
-        r["yogunluk"] = (1 - r["notr"]) + 0.5 * abs(r["valens_metin"])
-    # Katman: ses modelinin üst sınıfı × psikolojik kategori; her katmandan en yoğunlar, video başına sınır
+        r["yogunluk"] = (1 - r["notr"]) + 0.2 * abs(r["valens_metin"])
+    # Katman: ses modelinin üst sınıfı (ana) × metin valensinin yönü; her katmandan en yoğunlar, video başına sınır
     groups = defaultdict(list)
     for r in rows:
-        groups[(r["ses_ust"], r["kategori_on"])].append(r)
+        groups[(r["ses_ust"], "olumsuz" if r["valens_metin"] < -0.2 else "olumlu" if r["valens_metin"] > 0.2 else "orta")].append(r)
     for g in groups.values():
         g.sort(key=lambda r: -r["yogunluk"])
     per_video, picked = Counter(), []
