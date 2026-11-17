@@ -35,18 +35,27 @@ LLM_MODEL = os.getenv("LOKAL_LLM", "gemma3:4b")
 WHISPER_MODEL = os.getenv("LOKAL_WHISPER", "small")
 SER_MODEL = os.getenv("LOKAL_SES_DUYGU", "superb/wav2vec2-base-superb-er")
 TEXT_MODEL = os.getenv("LOKAL_METIN_DUYGU", "savasy/bert-base-turkish-sentiment-cased")
-PIPER_REPO = "rhasspy/piper-voices"
-# Piper Türkçe sesleri: rol -> ses adı (tr_TR-<ad>-medium)
-# Piper'da şu an tek Türkçe ses var (tr_TR-dfki-medium). Konuşmacıları ayırmak için aynı sesi farklı perdelerde
-# kullanıyoruz. Farklı/klonlanmış sesler için sonraki aşamada XTTS veya Chatterbox gibi bir model gerekir.
+# Türkçe Piper sesleri (hepsi CPU'da cümle başına ~0,15 sn). Önceden tek ses (dfki) farklı perdelere kaydırılarak
+# kullanılıyordu; bu sesi belirgin şekilde yapaylaştırıyordu. Artık her konuşmacının kendi gerçek sesi var.
+# Cinsiyet, ölçülen temel frekanstan (YIN) belirlendi: dfki ~104 Hz, fahrettin ~104 Hz, 99eren99 ~97 Hz (erkek),
+# fettah ~186 Hz (kadın). Topluluk seslerinin model kartında lisans belirtilmemiş: PoC için uygun, ürün öncesi kontrol edilmeli.
+PIPER_VOICES = {   # ad -> (Hugging Face deposu, model dosyası, ayar dosyası)
+    "dfki": ("rhasspy/piper-voices", "tr/tr_TR/dfki/medium/tr_TR-dfki-medium.onnx",
+             "tr/tr_TR/dfki/medium/tr_TR-dfki-medium.onnx.json"),
+    "fahrettin": ("speaches-ai/piper-tr_TR-fahrettin-medium", "model.onnx", "config.json"),
+    "fettah": ("speaches-ai/piper-tr_TR-fettah-medium", "model.onnx", "config.json"),
+    "99eren99": ("99eren99/piper-turkish-tts", "model.onnx", "config.json"),
+}
 AGENT_PIPER_VOICE = os.getenv("LOKAL_ASISTAN_SESI", "dfki")
 AGENT_PITCH = float(os.getenv("LOKAL_ASISTAN_PERDE", "1.0"))
 CUSTOMER_PIPER_VOICES = {  # Gemini ses adı (catalog.py'daki persona sesi) -> (Piper sesi, perde çarpanı)
-    "Fenrir": ("dfki", 0.86),   # Ahmet Bey: kalın
-    "Puck": ("dfki", 0.94),     # Mert
-    "Leda": ("dfki", 1.24),     # Zeynep Hanım: ince
-    "Kore": ("dfki", 1.16),     # Selin Hanım
+    "Fenrir": ("fahrettin", 1.0),   # Ahmet Bey (erkek)
+    "Puck": ("99eren99", 1.0),      # Mert (erkek)
+    "Leda": ("fettah", 1.0),        # Zeynep Hanım (kadın)
+    "Kore": ("fettah", 1.06),       # Selin Hanım (kadın; Zeynep'ten ayırmak için hafif perde farkı)
 }
+# Asistan sesi motoru: "piper" (hızlı, varsayılan) ya da "chatterbox" (çok daha doğal, CPU'da cümle başı ~15 sn)
+TTS_ENGINE = os.getenv("LOKAL_TTS", "piper").strip().lower()
 
 _lock = threading.Lock()
 _models: dict = {}
@@ -137,6 +146,24 @@ def _merge_roles(history: list[dict], prompt: str) -> list[dict]:
     return msgs
 
 
+LLM_STATS: list[dict] = []   # son çağrıların süre dökümü (panel/README için)
+
+
+def _log_timing(out: dict):
+    """Ollama'nın döndürdüğü süreleri yazar. prompt_eval_count = önbellekte OLMAYIP yeniden işlenen prompt tokenleri:
+    bu sayı her turda küçük kalıyorsa önbellek çalışıyor demektir (bkz. README, OLLAMA_NUM_PARALLEL)."""
+    try:
+        st = {"islenen_prompt": out.get("prompt_eval_count", 0), "prompt_sn": out.get("prompt_eval_duration", 0) / 1e9,
+              "uretilen": out.get("eval_count", 0), "uretim_sn": out.get("eval_duration", 0) / 1e9,
+              "toplam_sn": out.get("total_duration", 0) / 1e9}
+    except Exception:  # noqa: BLE001
+        return
+    LLM_STATS.append(st)
+    del LLM_STATS[:-50]
+    print(f"[lokal] LLM {st['toplam_sn']:.1f} sn = prompt {st['islenen_prompt']} token ({st['prompt_sn']:.1f} sn) "
+          f"+ üretim {st['uretilen']} token ({st['uretim_sn']:.1f} sn)", flush=True)
+
+
 def chat_json(system: str, prompt: str, schema: type[BaseModel], temperature: float = 0.7,
               history: list[dict] | None = None) -> BaseModel:
     """history: konuşmanın bu ajanın bakış açısından rol tabanlı geçmişi
@@ -161,6 +188,7 @@ def chat_json(system: str, prompt: str, schema: type[BaseModel], temperature: fl
     except urllib.error.URLError as e:
         raise RuntimeError(f"Ollama'ya bağlanılamadı ({OLLAMA_URL}). Ollama açık mı? ({e.reason})") from e
     STATUS["llm"] = f"hazır ({LLM_MODEL})"
+    _log_timing(out)
     # strict=False: küçük modeller bazen metnin içine çıplak satır sonu koyuyor; JSON yine de okunabilsin
     return schema.model_validate(json.loads(out["message"]["content"], strict=False))
 
@@ -332,11 +360,13 @@ def _piper_voice(name: str):
     def load():
         from huggingface_hub import hf_hub_download
         from piper import PiperVoice
-        base = f"tr/tr_TR/{name}/medium/tr_TR-{name}-medium.onnx"
-        onnx = hf_hub_download(PIPER_REPO, base)
-        hf_hub_download(PIPER_REPO, base + ".json")
-        return PiperVoice.load(onnx)
+        repo, onnx, cfg = PIPER_VOICES.get(name, PIPER_VOICES["dfki"])
+        return PiperVoice.load(hf_hub_download(repo, onnx), config_path=hf_hub_download(repo, cfg))
     return _get(f"piper_{name}", load)
+
+
+# Chatterbox 'exaggeration' (duygu yoğunluğu): asistanın tonuna göre
+_CB_EXAGGERATION = [("warm, slow", 0.35), ("upbeat", 0.75), ("professional", 0.4), ("friendly", 0.55)]
 
 
 def style_params(style: str) -> dict:
@@ -371,6 +401,15 @@ def _synth(voice, text: str, length_scale: float) -> tuple[np.ndarray, int]:
 
 def tts(text: str, style: str, voice_name: str) -> bytes:
     from . import config
+    from .tr_text import normalize_tr
+    # Rakam, saat, yüzde, para birimi, kısaltma: "16:00" -> "on altı", "%30" -> "yüzde otuz", "50 GB" -> "elli gigabayt".
+    # Test (12 cümle × 2, Whisper medium ile geri dinleme): kelime hata oranı %9,4 -> %2,9.
+    text = normalize_tr(text)
+    if voice_name == config.AGENT_VOICE and TTS_ENGINE == "chatterbox":
+        from . import chatterbox_tts
+        ex = next((v for k, v in _CB_EXAGGERATION if k in style.lower()), 0.5)
+        x, sr = _get("chatterbox", _load_chatterbox).synthesize(text, exaggeration=ex)
+        return float_to_wav((x / (np.max(np.abs(x)) + 1e-6) * 0.9).astype(np.float32), sr)
     if voice_name == config.AGENT_VOICE:
         piper_name, base_pitch = AGENT_PIPER_VOICE, AGENT_PITCH
     else:
@@ -378,13 +417,20 @@ def tts(text: str, style: str, voice_name: str) -> bytes:
     p = style_params(style)
     pitch = base_pitch * p["pitch"]
     voice = _piper_voice(piper_name)
-    # Perde kaydırma: sesi `pitch` kadar yavaş üretip örnekleme hızını `pitch` kadar artırınca süre aynı kalır, perde yükselir
+    # Perde (yalnızca küçük farklar için): sesi `pitch` kadar yavaş üretip örnekleme hızını `pitch` kadar artırınca süre
+    # aynı kalır, perde yükselir. Büyük oranlar (eskiden ×1,24) sesi yapaylaştırdığı için artık en fazla ~%6.
     x, sr = _synth(voice, text, p["length_scale"] * pitch)
     x = x / (np.max(np.abs(x)) + 1e-6) * 0.9 * p["volume"]
     return float_to_wav(x.astype(np.float32), int(round(sr * pitch)))
 
 
 # ============================================================ ısınma
+def _load_chatterbox():
+    from . import chatterbox_tts
+    chatterbox_tts.warmup()
+    return chatterbox_tts
+
+
 def warmup():
     """Uygulama açılırken modelleri arka planda yükler (ilk görüşme beklemesin)."""
     def run():
@@ -392,7 +438,8 @@ def warmup():
         for name, fn in (("whisper", lambda: transcribe(float_to_wav(np.zeros(16000, np.float32), 16000))),
                          ("metin_duygu", lambda: text_sentiment("merhaba")),
                          ("ses_duygu", lambda: speech_emotion(float_to_wav(np.zeros(16000, np.float32), 16000))),
-                         ("piper", lambda: [_piper_voice(v) for v in {AGENT_PIPER_VOICE, *[x[0] for x in CUSTOMER_PIPER_VOICES.values()]}])):
+                         ("piper", lambda: [_piper_voice(v) for v in {AGENT_PIPER_VOICE, *[x[0] for x in CUSTOMER_PIPER_VOICES.values()]}]),
+                         *([("chatterbox", lambda: _get("chatterbox", _load_chatterbox))] if TTS_ENGINE == "chatterbox" else [])):
             try:
                 fn()
             except Exception as e:  # noqa: BLE001

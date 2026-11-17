@@ -35,14 +35,14 @@ class AgentReply(BaseModel):
 
 
 class LocalAgentReply(BaseModel):
-    """Lokal (küçük) model için aynı şema, uzunluk sınırlı: uzun 'iç ses' JSON'u yarıda kesiyordu."""
-    ic_ses: str = Field(max_length=150, description="Tek kısa cümle: neden böyle cevap veriyorsun")
+    """Lokal (küçük) model için kısaltılmış şema. CPU'da üretim saniyede ~6-7 token: 'iç ses' alanı üretilen tokenlerin
+    ~%30'unu alıyordu, bu yüzden lokal modda iç ses modele yazdırılmaz (stratejiden kısa bir not oluşturulur)."""
     araclar: list[Literal[TOOL_NAMES]] = Field(default_factory=list, max_length=2, description="Çalıştırılacak araçlar (0-2)")
-    cevap: str = Field(max_length=330, description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 3 kısa cümle)")
+    cevap: str = Field(max_length=260, description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 2 kısa cümle)")
 
 
 class LocalCustomerReply(BaseModel):
-    konusma: str = Field(max_length=300, description="Müşterinin söyleyeceği 1-3 kısa Türkçe cümle")
+    konusma: str = Field(max_length=200, description="Müşterinin söyleyeceği 1-2 kısa Türkçe cümle")
 
 
 class CustomerReply(BaseModel):
@@ -358,7 +358,7 @@ class Call:
                        "Kendi adını kullanarak (ya da hiç ad vermeden) sorununu anlat.")
             prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {yon} {gorev} "
                       f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}. "
-                      "Müşteri olarak 1-3 kısa cümleyle cevap ver.")
+                      "Müşteri olarak 1-2 kısa cümleyle cevap ver.")
             hist = self._chat_history("müşteri")
         else:
             hist = None
@@ -573,10 +573,17 @@ class Call:
             tool_hint = (f" Müşterinin şu anki konusu: {ISSUES[konu]['ad']}. Bunu gerçekten çözmek için 'araclar' listesine "
                          f"{' ya da '.join(ISSUES[konu]['cozen'])} yaz; listeye yazmadığın işlemi 'yaptım' diye söyleme.")
         if self.mode == "lokal":
-            system += " Araç adlarını (ör. ariza_kaydi_ac) müşteriye söyleme; yaptığın işlemi doğal cümleyle anlat."
-            prompt = prompt.replace(f"Görüşme:\n{self._transcript()}\n\nSıradaki cevabını ver.",
-                                    "[YÖNERGE] Müşterinin son mesajına temsilci olarak cevap ver. Müşterinin cümlelerini "
-                                    "tekrarlama, aynı cümleyi iki kez kurma, en fazla 3 kısa cümle kullan." + tool_hint)
+            # Hız: CPU'da prompt işleme saniyede ~95 token. Sistem promptu ve konuşma geçmişi turdan tura aynı kaldığı
+            # sürece Ollama bunları önbellekten kullanır; bu yüzden sabit her şey (araç listesi, kurallar) sistemde,
+            # yalnızca bu tura özgü kısa yönerge en sonda.
+            system += (" Araç adlarını (ör. ariza_kaydi_ac) müşteriye söyleme; yaptığın işlemi doğal cümleyle anlat."
+                       f" Kullanabileceğin araçlar:\n{tools_txt}")
+            prompt = (f"[YÖNERGE] Strateji: {STRATEGIES[s]['ad']} ({STRATEGIES[s]['talimat']}) "
+                      f"Ton: {TONES[t]['ad']} ({TONES[t]['yazim']}) "
+                      f"Müşterinin duygusu: {an['duygu']}, ayrılma riski %{an['churn_riski'] * 100:.0f}."
+                      + (f" YÖNETMEN UYARISI: {director}" if director else "") + tool_hint
+                      + " Müşterinin son mesajına temsilci olarak en fazla 2 kısa cümleyle cevap ver; "
+                        "müşterinin cümlelerini tekrarlama.")
             hist = self._chat_history("asistan")
         else:
             hist = None
@@ -645,6 +652,10 @@ class Call:
                     if useful:
                         out["araclar"].append(tool)
                         out["metinden_araclar"].append(tool)
+        if self.mode == "lokal":
+            islem = ", ".join(TOOL_SPOKEN[a] for a in out.get("araclar", []) if a in TOOL_SPOKEN)
+            out["ic_ses"] = (f"{STRATEGIES[s]['ad']} ve {TONES[t]['ad'].lower()} ton deniyorum"
+                             + (f"; {islem} yapıyorum." if islem else "."))
         return out
 
     # ------------------------------------------------------------ bitiş

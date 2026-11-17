@@ -96,12 +96,13 @@ bilgisayarında çalışır. GPU gerekmez. İlk kurulumda `baslat.bat` anahtar s
 
 | İş | Lokal model | CPU'da süre (4 çekirdek, ölçülen) |
 |---|---|---|
-| Diyalog (asistan + müşteri) | **Ollama** üzerinden `gemma3:4b` (JSON şemalı çıktı) | cevap başına ~17-23 sn (4 çekirdekli test makinesi; daha güçlü CPU'da daha hızlı) |
+| Diyalog (asistan + müşteri) | **Ollama** üzerinden `gemma3:4b` (JSON şemalı çıktı) | asistan cevabı ~14-20 sn (4 çekirdekli test makinesi, önbellek açık; daha güçlü CPU'da daha hızlı) |
 | Ses → metin | **faster-whisper** `small` (int8) | ~1,4 sn / cümle |
 | Sesten duygu | `superb/wav2vec2-base-superb-er` | ~0,1 sn |
 | Metinden duygu | `savasy/bert-base-turkish-sentiment-cased`, cümle cümle puanlanıp ortalanır (×0,6) | ~0,1 sn |
 | Churn niyeti, konu | Türkçe anahtar kelime kuralları | anlık |
-| Seslendirme | **Piper** `tr_TR-dfki-medium` (hız, ses yüksekliği, perde ile tonlama) | ~0,2 sn |
+| Seslendirme | **Piper**, her konuşmacıya ayrı Türkçe ses + Türkçe metin normalleştirme | ~0,15 sn |
+| Seslendirme (isteğe bağlı, asistan) | **Chatterbox Multilingual** (ONNX, q4) — çok daha doğal, `LOKAL_TTS=chatterbox` | ~15 sn / cümle |
 
 Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn sürer.
 
@@ -126,6 +127,9 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
 | `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama başka makinedeyse |
+| `LOKAL_TTS` | `piper` | Asistan sesi motoru: `piper` (hızlı) ya da `chatterbox` (doğal ama yavaş) |
+| `LOKAL_ASISTAN_SESI` | `dfki` | Asistanın Piper sesi: `dfki`, `fahrettin`, `99eren99` (erkek) ya da `fettah` (kadın) |
+| `LOKAL_CHATTERBOX_SES` | (modelin sesi) | Chatterbox için ses örneği (WAV yolu); asistanın sesi bu örnekten klonlanır |
 
 **Küçük modellerle yaşanan sorunlar ve alınan önlemler** (gerçek modellerle test edildi):
 
@@ -152,16 +156,53 @@ gerçek −0,75 → +0,38).
 * **Metin duygu modeli** ürün yorumlarıyla eğitilmiş; kelimelere bakıyor. İyileştirmeden sonra bile gerçek ruh haliyle
   korelasyonu ~0,6. Çağrı merkezi verisiyle ince ayar gerekiyor. (Gemma'nın kendisini duygu puanlayıcı olarak denedik:
   hem yavaş, 7 sn/cümle, hem de daha kötü sonuç verdi.)
-* **Hız:** 4 çekirdekli test makinesinde LLM cevabı ~20 sn, tur başına (asistan + müşteri) ~35-45 sn.
+* **Hız:** bkz. "Hız ve ses kalitesi". 4 çekirdekli test makinesinde asistan cevabı ~14-20 sn.
   Demo için "Sesleri çal" kapalı metin modu ve önceden kaydedilmiş görüşmeler önerilir.
 * **Ses duygu modeli** İngilizce oyunculu konuşmayla eğitilmiş; Türkçe öfkeli müşteriyi "mutlu" (%59) sınıfladı.
   Bu yüzden füzyonda ağırlığı düşük (valensin %10'u). Türkçe duygulu konuşma verisiyle ince ayar gerekiyor.
-* **Piper'da tek Türkçe ses** var; konuşmacılar perde farkıyla ayrılıyor ve ses duyguyu gerçekten taşımıyor
+* **Piper sesleri duyguyu gerçekten taşımıyor**; ton yalnızca hız, ses yüksekliği ve küçük perde farklarıyla veriliyor
   (yalnızca hız ve ses yüksekliği değişiyor). Duygulu ve farklı sesler için XTTS veya Chatterbox gibi bir model gerekir.
 * Churn niyeti ve konu şimdilik anahtar kelime kurallarıyla bulunuyor.
 
 Raporlarda lokal analiz "lokal: ses + metin" olarak görünür. Metin ve ses modellerinin ayrı çıktıları da
 `rapor.json` içinde `lokal_ayrinti` alanında durur; böylece iki sağlayıcıyı raporlarla karşılaştırabilirsin.
+
+### Hız ve ses kalitesi (ölçümler)
+
+**Dil modeli hızı.** CPU'da sürenin yarısı prompt işleme (saniyede ~95 token), yarısı üretim (saniyede ~6,5 token).
+Asistan ve müşteri sırayla aynı modeli kullandığı için her çağrı bir öncekinin önbelleğini siliyor ve büyüyen konuşma
+geçmişi her seferinde baştan işleniyordu. Yapılanlar:
+
+| Değişiklik | Etki |
+|---|---|
+| Sabit kısımlar (kurallar, araç listesi) sistem promptunda, bu tura özgü kısa yönerge en sonda | Konuşma geçmişi önbellekten kullanılabiliyor |
+| Ollama'da `OLLAMA_NUM_PARALLEL=2`: asistan ve müşteri ayrı önbellek "slot"u kullanıyor | 1016 tokenlik promptun yalnızca ~250'si yeniden işleniyor |
+| Lokal modda "iç ses" modele yazdırılmıyor, cevaplar en fazla 2 cümle | Üretilen token 95-126 → 50-67 |
+| **Toplam** | **Asistan cevabı 32-43 sn → 14-20 sn** (aynı makine, aynı model) |
+
+Önbelleğin çalıştığını konsoldaki satırlardan görebilirsin: `[lokal] LLM 15 sn = prompt 250 token (...)`. Buradaki
+token sayısı her turda birkaç yüz düzeyinde kalıyorsa önbellek çalışıyor; turdan tura büyüyorsa `OLLAMA_NUM_PARALLEL`
+ayarlı değil demektir. Ayarlamak için (Windows, bir kez): `setx OLLAMA_NUM_PARALLEL 2`, sonra Ollama'yı kapatıp aç.
+
+**Türkçe okuma ve doğallık.** 12 cümle × 2 tekrar seslendirildi, ses Whisper medium ile geri dinlenip kelime hata oranı
+(WER) ölçüldü:
+
+| Seçenek | WER | Cümle başı süre |
+|---|---|---|
+| Eski: dfki, ham metin | %9,4 | 0,15 sn |
+| **dfki + Türkçe normalleştirme** | **%2,9** | 0,15 sn |
+| fahrettin / fettah / 99eren99 + normalleştirme | %4,5-5,7 | 0,15 sn |
+| MMS-TTS (Meta) + normalleştirme | %16,7 | 0,94 sn (lisansı ticari kullanıma kapalı, elendi) |
+| Chatterbox Multilingual (q4) + normalleştirme | 4 cümlede 1 hata | ~15 sn |
+
+* **Normalleştirme** (`core/tr_text.py`): "16:00-18:00" → "on altı ile on sekiz", "%30" → "yüzde otuz",
+  "240 TL" → "iki yüz kırk lira", "50 GB" → "elli gigabayt", "Mbps'e" → "megabite", "10'dan" → "ondan".
+  Eskiden saatler "16-00-18-00", GB "gebe" diye okunuyordu.
+* **Yapaylık:** eskiden tek ses farklı perdelere kaydırılarak (×0,86 - ×1,24) farklı konuşmacılar üretiliyordu; bu sesi
+  belirgin şekilde yapaylaştırıyordu. Artık her konuşmacının kendi sesi var (asistan dfki, Ahmet fahrettin, Mert 99eren99,
+  Zeynep ve Selin fettah). Cinsiyet, ölçülen temel frekanstan belirlendi.
+* **En doğal ses** Chatterbox: modern bir model, duygu yoğunluğu ayarı (asistanın tonuna bağlandı) ve ses klonlama var.
+  CPU'da yavaş olduğu için isteğe bağlı; sunum için önceden kayıt almaya uygun (kayıtlar API'siz tekrar oynatılır).
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 

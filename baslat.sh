@@ -27,17 +27,18 @@ if [ ! -f ".env" ]; then
 fi
 
 if grep -qi '^SAGLAYICI=lokal' .env 2>/dev/null; then
-  if [ ! -f .venv/lokal-kurulu.txt ]; then
+  if [ ! -f .venv/lokal-kurulu-v2.txt ]; then
     echo "Lokal model paketleri kuruluyor (torch, whisper, transformers, piper). İlk seferde 5-10 dakika sürebilir..."
     if [ "$(uname)" = "Linux" ]; then
       .venv/bin/python -m pip install -q torch --index-url https://download.pytorch.org/whl/cpu || true   # GPU'suz küçük torch
     fi
     .venv/bin/python -m pip install -q -r requirements-lokal.txt
-    echo ok > .venv/lokal-kurulu.txt
+    echo ok > .venv/lokal-kurulu-v2.txt
   fi
   LLM=$(grep -i '^LOKAL_LLM=' .env | cut -d= -f2-); LLM=${LLM:-gemma3:4b}
   if command -v ollama >/dev/null; then
     ollama list | grep -qi "$LLM" || { echo "$LLM modeli indiriliyor (ilk sefer, ~3 GB)..."; ollama pull "$LLM"; }
+    [ -z "$OLLAMA_NUM_PARALLEL" ] && echo "[İPUCU] Hız için Ollama'yı OLLAMA_NUM_PARALLEL=2 ile başlatın (asistan ve müşteri ayrı önbellek kullanır)."
   else
     echo "[UYARI] Ollama bulunamadı. https://ollama.com/download adresinden kurun, sonra: ollama pull $LLM"
   fi
