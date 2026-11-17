@@ -198,6 +198,21 @@ uygulaması da modeli bellekte tutuyorsa bir süre iki kopya bellekte kalabilir;
 token sayısı her turda birkaç yüz düzeyinde kalıyorsa önbellek çalışıyor; turdan tura büyüyorsa çalışmıyor demektir
 (uygulama bu durumda konsola bir uyarı yazar, nedeni `data/ollama_ozel.log` dosyasında olur).
 
+**Cümle cümle seslendirme (lokal + sesli mod, varsayılan).** Asistan artık cevabın tamamını beklemiyor: model yazdıkça
+her tamamlanan cümle denetleniyor (kural dışı söz, tekrar, müşteriyi yankılama), seslendiriliyor ve hemen çalınıyor;
+geri kalan cümleler bu sırada üretiliyor. Müşterinin cevabı da asistanın son cümleleri çalarken hazırlanmaya başlıyor.
+Akış `POST /api/call/{id}/agent_stream` (SSE) üzerinden: önce `analiz` (seçilen strateji/ton, duygu analizi), sonra her
+cümle için `cumle`, en sonda `son` (araç sonuçları, iç ses, rapor için birleştirilmiş ses). Akış şemasında `cevap`
+alanı `araclar`dan önce geldiği için ilk cümle araç listesini beklemez. Modelin "kontrol ediyorum" deyip aracı çağırmayı
+unutması durumunda araç yine metinden çıkarılır. Test makinesinde (4 çekirdek, saniyede ~6,5 token):
+
+| | Eski (tam cevap) | Cümle cümle |
+|---|---|---|
+| Müşteri sustuktan sonra asistanın ilk sesi | 11-18 sn | **1-5 sn** (müşteri konuşurken düşünmeye başlıyor) |
+| Modelin ilk parçası | – | 2-4 sn |
+
+Gemini ve demo modu eskisi gibi tek seferde çalışır. Kayıttan tekrar oynatma da aynı kalır.
+
 **Türkçe okuma ve doğallık.** 12 cümle × 2 tekrar seslendirildi, ses Whisper medium ile geri dinlenip kelime hata oranı
 (WER) ölçüldü:
 

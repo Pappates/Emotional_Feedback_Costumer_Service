@@ -42,6 +42,12 @@ class LocalAgentReply(BaseModel):
     cevap: str = Field(max_length=260, description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 2 kısa cümle)")
 
 
+class LocalAgentStreamReply(BaseModel):
+    """Cümle cümle seslendirme için: cevap ÖNCE gelir ki ilk cümle araç listesini beklemeden seslendirilebilsin."""
+    cevap: str = Field(max_length=260, description="Müşteriye söyleyeceğin Türkçe cevap (en fazla 2 kısa cümle)")
+    araclar: list[Literal[TOOL_NAMES]] = Field(default_factory=list, max_length=2, description="Çalıştırılacak araçlar (0-2)")
+
+
 class LocalCustomerReply(BaseModel):
     konusma: str = Field(max_length=200, description="Müşterinin söyleyeceği 1-2 kısa Türkçe cümle")
 
@@ -94,7 +100,7 @@ TOOL_HINTS = {  # lokal modda model aracı çağırmayı unutup "açıyorum" der
     # Desenler Türkçe karaktersiz yazılır; metin de karaktersizleştirilip aranır ("ariza" = "arıza")
     "ariza_kaydi_ac": r"ariza (kayd|bildirim)",
     "teknisyen_randevusu": r"teknisyen|randevu|saha ekib",
-    "fatura_incele_iade": r"\biade|(fatura|ucret|paket|tutar)\w*[^.!?]{0,40}(sil|kaldir|duzelt|incele|iptal|geri)",
+    "fatura_incele_iade": r"\biade|(fatura|ucret|paket|tutar)\w*[^.!?]{0,40}(sil|kaldir|duzelt|incele|iptal|geri|kontrol)",
     "nakil_islemi": r"nakil|nakl|tasima islem|yeni adres",
     "hat_optimizasyonu": r"hat test|optimiz|port\w* (ayar|yenile|sifirla)",
     "kampanya_tanimla": r"kampanya|indirim|hediye|telafi",
@@ -178,6 +184,39 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
         out = out[:-1]
     t = " ".join(out)
     return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
+
+
+def partial_json_string(buf: str, key: str) -> tuple[str, bool]:
+    """Akış hâlindeki JSON'da `key` alanının o ana kadarki metnini çözer: '{"araclar":[],"cevap":"Merhaba, hemen'
+    -> ('Merhaba, hemen', False). İkinci değer alanın kapanıp kapanmadığı."""
+    m = re.search(r'"%s"\s*:\s*"' % re.escape(key), buf)
+    if not m:
+        return "", False
+    out, i = [], m.end()
+    esc = {"n": "\n", "t": " ", "r": "", '"': '"', "\\": "\\", "/": "/"}
+    while i < len(buf):
+        c = buf[i]
+        if c == "\\":
+            if i + 1 >= len(buf):
+                break
+            nxt = buf[i + 1]
+            if nxt == "u":
+                if i + 6 > len(buf):
+                    break
+                try:
+                    out.append(chr(int(buf[i + 2:i + 6], 16)))
+                except ValueError:
+                    pass
+                i += 6
+                continue
+            out.append(esc.get(nxt, nxt))
+            i += 2
+            continue
+        if c == '"':
+            return "".join(out), True
+        out.append(c)
+        i += 1
+    return "".join(out), False
 
 
 def _similar(a: str, b: str) -> float:
@@ -444,6 +483,119 @@ class Call:
 
     # ------------------------------------------------------------ asistan turu
     def agent_turn(self) -> dict:
+        ctx = self._agent_prepare()
+        if ctx["son"]:
+            return ctx["son"]
+        reply = self._agent_reply(ctx["s"], ctx["t"], ctx["an"], ctx["director"])
+        _, url = self._speak(reply["cevap"], TONES[ctx["t"]]["tts"], config.AGENT_VOICE, "asistan")
+        return self._agent_apply(ctx, reply, url)
+
+    def agent_turn_stream(self):
+        """Cümle cümle seslendirme: modelin cevabı geldikçe her tamamlanan cümle denetlenip seslendirilir ve hemen
+        gönderilir. Olaylar: {"tip": "analiz"} (seçim ve duygu analizi, konuşmadan önce), {"tip": "cumle"} (metin + ses),
+        {"tip": "son"} (tur sonucu, agent_turn ile aynı alanlar). Sadece lokal + sesli modda kullanılır."""
+        if self.mode != "lokal":                       # diğer modlar akışsız: tek seferde tur sonucu
+            yield {"tip": "son", **self.agent_turn()}
+            return
+        ctx = self._agent_prepare()
+        if ctx["son"]:
+            yield {"tip": "son", **ctx["son"]}
+            return
+        s, t, an = ctx["s"], ctx["t"], ctx["an"]
+        yield {"tip": "analiz", **self._agent_preview(ctx)}
+        system, prompt, hist, _ = self._agent_prompt(s, t, an, ctx["director"])
+        schema = LocalAgentStreamReply
+        last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
+        from . import local
+        buf, emitted_upto, spoken, wavs, dropped = "", 0, [], [], []
+
+        def accept(sentence: str):
+            sentence = clean_utterance(sentence, max_sentences=1)
+            if self.agent_turns > 0 and not spoken:
+                sentence = re.sub(r"^merhaba[,!.]?\s*", "", sentence, flags=re.I)
+            if len(sentence) < 2:
+                return None
+            sentence = sentence[0].upper() + sentence[1:]
+            bad = promise_violations(sentence)
+            if bad:                                    # kural dışı söz: bu cümle söylenmez
+                dropped.extend(bad)
+                print(f"[koruma] kural dışı söz, cümle atlandı: {bad}", flush=True)
+                return None
+            if _similar(sentence, last_cust) > 0.55 or sentence in spoken:
+                return None
+            return sentence
+
+        def speak(sentence: str):
+            wav, url = self._speak(sentence, TONES[t]["tts"], config.AGENT_VOICE, f"asistan{len(spoken)}")
+            spoken.append(sentence)
+            if wav:
+                wavs.append(wav)
+            return {"tip": "cumle", "metin": sentence, "ses": url, "sira": len(spoken) - 1,
+                    "rate": TONES[t]["rate"], "pitch": TONES[t]["pitch"]}
+
+        try:
+            for delta in local.chat_stream(system, prompt, schema, 0.6, hist):
+                buf += delta
+                text, _ = partial_json_string(buf, "cevap")
+                pending = text[emitted_upto:]
+                m = None
+                for m in re.finditer(r"[.!?…]+(?=\s)", pending):
+                    pass
+                if m and len(spoken) < 3:
+                    chunk = pending[:m.end()]
+                    emitted_upto += len(chunk)
+                    for sent in re.split(r"(?<=[.!?…])\s+", chunk.strip()):
+                        ok = accept(sent)
+                        if ok and len(spoken) < 3:
+                            yield speak(ok)
+        except Exception as e:  # noqa: BLE001
+            if "bağlanılamadı" in str(e) or "modeli yok" in str(e):
+                raise
+            print(f"[koruma] akış hatası: {str(e)[:100]}", flush=True)
+        text, _ = partial_json_string(buf, "cevap")
+        tail = text[emitted_upto:].strip()
+        if tail and len(spoken) < 3:
+            for sent in re.split(r"(?<=[.!?…])\s+", tail):
+                ok = accept(sent)
+                if ok and len(spoken) < 3:
+                    yield speak(ok)
+        if not spoken:                                  # hiçbir cümle geçmediyse hazır cümle
+            yield speak(MOCK_AGENT[s])
+        try:
+            import json as _json
+            parsed = _json.loads(buf, strict=False)
+            araclar = [a for a in parsed.get("araclar", []) if a in TOOLS][:2]
+        except Exception:  # noqa: BLE001
+            araclar = []
+        out = {"cevap": " ".join(spoken), "araclar": araclar, "ic_ses": "", "_raw": text}
+        reply = self._agent_post(out, s, t, an)
+        reply["kural_disi_soz"] = sorted(set(reply.get("kural_disi_soz", [])) | set(dropped))
+        url = self._join_audio(wavs)                    # kayıt ve rapor için tek dosya
+        yield {"tip": "son", **self._agent_apply(ctx, reply, url)}
+
+    def _join_audio(self, wavs: list[bytes]):
+        if not wavs:
+            return None
+        from .local import float_to_wav, wav_to_float
+        import io as _io, wave as _wave
+        with _wave.open(_io.BytesIO(wavs[0])) as w:
+            sr = w.getframerate()
+        gap = np.zeros(int(sr * 0.18), np.float32)
+        parts = []
+        for wb in wavs:
+            parts += [wav_to_float(wb, sr), gap]
+        path, url = self._audio_path("asistan")
+        path.write_bytes(float_to_wav(np.concatenate(parts[:-1]), sr))
+        return url
+
+    def _agent_preview(self, ctx) -> dict:
+        s, t = ctx["s"], ctx["t"]
+        return {**ctx["base"], "bitti": False, "strateji": s, "ton": t, "strateji_ad": STRATEGIES[s]["ad"],
+                "ton_ad": TONES[t]["ad"], "rate": TONES[t]["rate"], "pitch": TONES[t]["pitch"],
+                "neden": {"strateji": self.learner.explain("strateji", s), "ton": self.learner.explain("ton", t)},
+                "yonetmen": ctx["director"], "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}
+
+    def _agent_prepare(self) -> dict:
         last_text = self.history[-1]["metin"]
         # 1) Dinle: duygu analizi
         if self.mode == "mock":
@@ -490,9 +642,9 @@ class Call:
         if self.ended:
             ev["beyin_son"] = self.learner.snapshot()
             self._finish()
-            return {**base, "bitti": True, "sonuc": self.outcome, "ozet": self.summary(),
-                    "rapor": f"/raporlar/{self.id}" if self.save_report else None,
-                    "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}
+            return {"son": {**base, "bitti": True, "sonuc": self.outcome, "ozet": self.summary(),
+                            "rapor": f"/raporlar/{self.id}" if self.save_report else None,
+                            "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}}
 
         # 4) Yönetmen (Director): müşteri kaçmak üzereyse uyarı
         self.low_streak = self.low_streak + 1 if an["churn_riski"] >= 0.75 else 0
@@ -510,8 +662,12 @@ class Call:
             s, s_samples = self.learner.select("strateji")
             t, t_samples = self.learner.select("ton")
 
-        # 6) Cevap üret ve araçları çalıştır
-        reply = self._agent_reply(s, t, an, director)
+        return {"son": None, "an": an, "base": base, "ev": ev, "s": s, "t": t, "s_samples": s_samples,
+                "t_samples": t_samples, "director": director}
+
+    def _agent_apply(self, ctx, reply, url) -> dict:
+        s, t, ev, base, director = ctx["s"], ctx["t"], ctx["ev"], ctx["base"], ctx["director"]
+        s_samples, t_samples = ctx["s_samples"], ctx["t_samples"]
         actions, cozulen, kampanya_ilk = [], [], False
         for tool in reply["araclar"][:2]:
             self.tool_counter += 1
@@ -536,7 +692,6 @@ class Call:
             "cevap": reply["cevap"], "ic_ses": reply["ic_ses"], "araclar": actions,
             "kural_disi_soz": reply.get("kural_disi_soz", []),
         })
-        wav, url = self._speak(reply["cevap"], TONES[t]["tts"], config.AGENT_VOICE, "asistan")
         ev["ses"] = url
         self.history.append({"rol": "asistan", "metin": reply["cevap"]})
         for a in actions:
@@ -552,16 +707,7 @@ class Call:
             "beyin": self.learner.snapshot(), "baglam": self.learner.ctx,
         }
 
-    def _agent_reply(self, s, t, an, director) -> dict:
-        if self.mode == "mock":
-            tools = []
-            cur = self.current_issue
-            if cur and self.pyrng.random() < MOCK_RESOLVE_P[s]:
-                tools.append(ISSUES[cur]["cozen"][0])
-            if s == "telafi_teklifi":
-                tools.append("kampanya_tanimla")
-            return {"cevap": MOCK_AGENT[s], "ic_ses": f"{STRATEGIES[s]['ad']} deniyorum.", "araclar": tools}
-
+    def _agent_prompt(self, s, t, an, director):
         tools_txt = "\n".join(f"- {k}: {v['aciklama']}" for k, v in TOOLS.items())
         done = [h["metin"] for h in self.history if h["rol"] == "sistem"]
         system = (
@@ -603,8 +749,21 @@ class Call:
             hist = self._chat_history("asistan", window=LOCAL_HISTORY)
         else:
             hist = None
-        last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
         schema = LocalAgentReply if self.mode == "lokal" else AgentReply
+        return system, prompt, hist, schema
+
+    def _agent_reply(self, s, t, an, director) -> dict:
+        if self.mode == "mock":
+            tools = []
+            cur = self.current_issue
+            if cur and self.pyrng.random() < MOCK_RESOLVE_P[s]:
+                tools.append(ISSUES[cur]["cozen"][0])
+            if s == "telafi_teklifi":
+                tools.append("kampanya_tanimla")
+            return {"cevap": MOCK_AGENT[s], "ic_ses": f"{STRATEGIES[s]['ad']} deniyorum.", "araclar": tools}
+
+        system, prompt, hist, schema = self._agent_prompt(s, t, an, director)
+        last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
         out = None
         for attempt in range(2):
             try:
@@ -616,6 +775,7 @@ class Call:
                 print(f"[koruma] asistan cevabı okunamadı: {str(e)[:100]}", flush=True)
                 continue
             out = r.model_dump()
+            out["_raw"] = out["cevap"]
             out["cevap"] = clean_utterance(out["cevap"])
             if self.agent_turns > 0:   # her tura "Merhaba" ile başlamasın
                 out["cevap"] = re.sub(r"^merhaba[,!.]?\s*", "", out["cevap"], flags=re.I) or out["cevap"]
@@ -637,6 +797,9 @@ class Call:
             out = out or {"ic_ses": "", "araclar": []}
             if not out.get("cevap") or _similar(out["cevap"], last_cust) > 0.55:
                 out["cevap"] = MOCK_AGENT[s]
+        return self._agent_post(out, s, t, an)
+
+    def _agent_post(self, out, s, t, an) -> dict:
         # ikinci denemede de kural dışı söz kaldıysa o cümleleri çıkar (başka cümle varsa)
         out["kural_disi_soz"] = promise_violations(out["cevap"])
         if out["kural_disi_soz"]:
@@ -661,7 +824,7 @@ class Call:
         if self.mode == "lokal" and not out["araclar"]:
             low = ascii_tr(out["cevap"])
             open_issues = [i for i in self.revealed_issues() if i not in self.resolved]
-            raw = ascii_tr(r.cevap if out else "")
+            raw = ascii_tr(out.pop("_raw", out["cevap"]))
             for tool, pat in TOOL_HINTS.items():
                 if (re.search(pat, low) or tool in raw) and len(out["araclar"]) < 2:
                     useful = any(tool in ISSUES[i]["cozen"] for i in open_issues) or tool == "kampanya_tanimla"
@@ -672,6 +835,7 @@ class Call:
             islem = ", ".join(TOOL_SPOKEN[a] for a in out.get("araclar", []) if a in TOOL_SPOKEN)
             out["ic_ses"] = (f"{STRATEGIES[s]['ad']} ve {TONES[t]['ad'].lower()} ton deniyorum"
                              + (f"; {islem} yapıyorum." if islem else "."))
+        out.pop("_raw", None)
         return out
 
     # ------------------------------------------------------------ bitiş

@@ -266,6 +266,50 @@ def chat_json(system: str, prompt: str, schema: type[BaseModel], temperature: fl
     return schema.model_validate(json.loads(out["message"]["content"], strict=False))
 
 
+def chat_stream(system: str, prompt: str, schema: type[BaseModel], temperature: float = 0.7,
+                history: list[dict] | None = None):
+    """chat_json'un akış hâli: modelin ürettiği metni parça parça döndürür (cümle cümle seslendirme için).
+    Ollama /api/chat stream=true her satırda bir JSON nesnesi gönderir; son satır süre istatistiklerini taşır."""
+    payload = {
+        "model": LLM_MODEL,
+        "messages": [{"role": "system", "content": system}, *_merge_roles(history or [], prompt)],
+        "format": schema.model_json_schema(),
+        "stream": True,
+        "keep_alive": "30m",
+        "options": {"temperature": temperature, "num_ctx": 4096, "top_p": 0.9,
+                    "repeat_penalty": 1.15, "num_predict": 260},
+    }
+    req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        resp = urllib.request.urlopen(req, timeout=300)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise RuntimeError(f"Ollama'da '{LLM_MODEL}' modeli yok. Terminalde: ollama pull {LLM_MODEL}") from e
+        raise RuntimeError(f"Ollama hatası {e.code}: {e.read().decode('utf-8', 'ignore')[:200]}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Ollama'ya bağlanılamadı ({OLLAMA_URL}). Ollama açık mı? ({e.reason})") from e
+    STATUS["llm"] = f"hazır ({LLM_MODEL})"
+    t0 = time.time()
+    first = None
+    with resp:
+        for line in resp:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            piece = (obj.get("message") or {}).get("content", "")
+            if piece:
+                if first is None:
+                    first = time.time() - t0
+                yield piece
+            if obj.get("done"):
+                _log_timing(obj)
+                if first is not None:
+                    print(f"[lokal] ilk parça {first:.1f} sn'de geldi (akış)", flush=True)
+                break
+
+
 # ============================================================ ses -> metin
 def transcribe(wav_bytes: bytes) -> str:
     def load():

@@ -9,7 +9,7 @@ import traceback
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -121,6 +121,25 @@ def agent(cid: str):
         out = c.agent_turn()
     _record(c, "asistan", out)
     return out
+
+
+@app.post("/api/call/{cid}/agent_stream")
+def agent_stream(cid: str):
+    """Cümle cümle seslendirme (lokal + sesli mod): Server-Sent Events akışı. Olaylar için bkz. Call.agent_turn_stream."""
+    c = _get(cid)
+
+    def gen():
+        with LOCK:
+            try:
+                for ev in c.agent_turn_stream():
+                    if ev.get("tip") == "son":
+                        _record(c, "asistan", {k: v for k, v in ev.items() if k != "tip"})
+                    yield "data: " + json.dumps(ev, ensure_ascii=False, default=float) + "\n\n"
+            except Exception as e:  # noqa: BLE001
+                traceback.print_exc()
+                yield "data: " + json.dumps({"tip": "hata", "hata": f"{type(e).__name__}: {e}"}, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/call/{cid}/customer")

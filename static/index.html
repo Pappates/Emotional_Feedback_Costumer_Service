@@ -252,7 +252,7 @@ function addMsg(cls, who, text, chips=[]){
   if(chat.querySelector('.empty')) chat.innerHTML = '';
   const d = document.createElement('div');
   d.className = 'msg ' + cls;
-  d.innerHTML = (who?`<div class="who">${who}</div>`:'') + `<div>${text}</div>` +
+  d.innerHTML = (who?`<div class="who">${who}</div>`:'') + `<div class="txt">${text}</div>` +
     (chips.length ? `<div class="chips">${chips.join('')}</div>` : '');
   chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
   return d;
@@ -336,7 +336,60 @@ function showAgent(a){
   return speak(a.metin, a.ses, el, {rate: a.rate, pitch: a.pitch});
 }
 
+// ---- Cümle cümle seslendirme (lokal + sesli mod): sunucu olayları geldikçe tamponlanır, döngü sırayla tüketir
+function openStream(url){
+  const ch = {items: [], waiters: [], done: false};
+  ch.push = ev => { const w = ch.waiters.shift(); if(w) w(ev); else ch.items.push(ev); };
+  ch.next = () => ch.items.length ? Promise.resolve(ch.items.shift())
+    : (ch.done ? Promise.resolve(null) : new Promise(r => ch.waiters.push(r)));
+  (async () => {
+    try{
+      const r = await fetch(url, {method: 'POST'});
+      if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+      for(;;){
+        const {value, done} = await reader.read(); if(done) break;
+        buf += dec.decode(value, {stream: true}); let i;
+        while((i = buf.indexOf('\n\n')) >= 0){
+          const line = buf.slice(0, i).split('\n').find(l => l.startsWith('data: ')); buf = buf.slice(i + 2);
+          if(line) ch.push(JSON.parse(line.slice(6)));
+        }
+      }
+    }catch(e){ ch.push({tip: 'hata', hata: e.message}); }
+    ch.done = true; ch.waiters.splice(0).forEach(w => w(null));
+  })();
+  return ch;
+}
+
+// Konuşmadan önce: seçim, gerekçe, beyin (analiz olayı)
+function startAgentUI(a){
+  const el = addMsg('asistan', 'Asistan Deniz', '', [chip('strateji: ' + a.strateji_ad), chip('ton: ' + a.ton_ad)]);
+  $('why').innerHTML = `<b>${a.strateji_ad}</b>: ${a.neden.strateji}<br><b>${a.ton_ad}</b>: ${a.neden.ton}`;
+  const d = $('director'); d.style.display = a.yonetmen ? 'block' : 'none'; d.textContent = a.yonetmen ? '⚠ Yönetmen: ' + a.yonetmen : '';
+  CALL.lastSnap = a.beyin; CALL.lastSel = {strateji: a.strateji, ton: a.ton}; brain(a.beyin, CALL.lastSel);
+  return el;
+}
+// Cevap bitince: işlemler, çözülen sorun sayısı, iç ses
+function finishAgentUI(a){
+  CALL.solved = CALL.solved || 0;
+  for(const x of a.araclar){
+    if(x.cozdu) CALL.solved++;
+    addMsg('sistem', '', `⚙ <b>${x.arac}</b>: ${x.sonuc}${x.cozdu ? ` <b>(çözüldü: ${x.cozdu})</b>` : ''}`);
+  }
+  const p = INFO.personalar[CALL.persona];
+  $('kSolved').textContent = `${CALL.solved}/${p.sorunlar.length}`; $('kSolvedH').textContent = p.sorunlar.join(', ');
+  $('thought').textContent = '“' + a.ic_ses + '”';
+  CALL.lastSnap = a.beyin; brain(a.beyin, CALL.lastSel);
+}
+
 const waitUnpaused = () => new Promise(res => { const t = () => paused ? setTimeout(t, 200) : res(); t(); });
+
+function showOutcome(a, rec){
+  const ok = a.sonuc === 'kaldi', rp = a.rapor || (CALL.rec && CALL.rec.rapor);
+  addMsg('outcome ' + a.sonuc, '', (ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)')
+    + (rp ? `<div style="font-weight:400;margin-top:6px"><a href="${rp}" target="_blank">Detaylı duygu raporunu aç</a> · <a href="${rp}/html">HTML indir</a> · <a href="${rp}/csv">CSV indir</a></div>` : ''));
+  CALL.lastSnap = a.beyin; CALL.lastSel = null; brain(a.beyin);
+}
 
 async function runCall(rec){
   running = true; paused = false;
@@ -350,24 +403,45 @@ async function runCall(rec){
     const s = rec ? {id: null, persona: rec.persona, ses: rec.ses, tur: rec.events[0].data}
                   : await api('/api/call/start', {persona: $('persona').value, ses: $('useAudio').checked});
     const next = path => rec ? new Promise(r => setTimeout(() => r(rec.events[i++].data), 300)) : api(path, {});
-    CALL = {id: s.id, persona: s.persona, solved: 0};
+    CALL = {id: s.id, persona: s.persona, solved: 0, stream: !rec && s.mod === 'lokal' && s.ses, rec};
     $('chat').innerHTML = '';
     const p = INFO.personalar[s.persona];
     $('personaCard').innerHTML = `<b>${p.ad}</b>: ${p.ozet} <span class="chip">${s.ses ? 'sesli mod' : 'metin modu'}</span>${rec ? ' <span class="chip">kayıttan oynatılıyor</span>' : ''}`;
     brain(null);
     let play = showCustomer(s.tur);
     while(true){
+      if(CALL.stream){
+        // Cümle cümle: asistan müşteri konuşurken düşünmeye başlar, ilk cümle hazır olunca konuşur
+        const ch = openStream(`/api/call/${CALL.id}/agent_stream`);
+        await play; await waitUnpaused();
+        let ev = await ch.next();
+        if(!ev || ev.tip === 'hata') throw new Error(ev ? ev.hata : 'akış kesildi');
+        if(ev.tip === 'son' && ev.bitti){ ev.tip = undefined; showAnalysis(ev); showOutcome(ev); break; }
+        showAnalysis(ev);
+        const el = startAgentUI(ev), txt = el.querySelector('.txt');
+        txt.textContent = '…'; let first = true;
+        let speaking = Promise.resolve(), cp = null;
+        while((ev = await ch.next())){
+          if(ev.tip === 'cumle'){
+            txt.textContent = (first ? '' : txt.textContent + ' ') + ev.metin; first = false;
+            $('chat').scrollTop = $('chat').scrollHeight;
+            const e2 = ev; speaking = speaking.then(() => speak(e2.metin, e2.ses, el, {rate: e2.rate, pitch: e2.pitch}));
+          } else if(ev.tip === 'son'){
+            finishAgentUI(ev);
+            cp = api(`/api/call/${CALL.id}/customer`, {});   // kalan cümleler çalarken müşteri hazırlanır
+            break;
+          } else if(ev.tip === 'hata') throw new Error(ev.hata);
+        }
+        await speaking; await waitUnpaused();
+        if(!cp) throw new Error('akış tamamlanmadı');
+        play = showCustomer(await cp);
+        continue;
+      }
       const ap = next(`/api/call/${CALL.id}/agent`);   // müşteri konuşurken asistan düşünmeye başlar
       await play; await waitUnpaused();
       const a = await ap;
       showAnalysis(a);
-      if(a.bitti){
-        const ok = a.sonuc === 'kaldi';
-        addMsg('outcome ' + a.sonuc, '', (ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)')
-          + ((a.rapor || (rec && rec.rapor)) ? `<div style="font-weight:400;margin-top:6px"><a href="${a.rapor || rec.rapor}" target="_blank">Detaylı duygu raporunu aç</a> · <a href="${a.rapor || rec.rapor}/html">HTML indir</a> · <a href="${a.rapor || rec.rapor}/csv">CSV indir</a></div>` : ''));
-        CALL.lastSnap = a.beyin; CALL.lastSel = null; brain(a.beyin);
-        break;
-      }
+      if(a.bitti){ showOutcome(a); break; }
       play = showAgent(a);
       const cp = next(`/api/call/${CALL.id}/customer`);
       await play; await waitUnpaused();
