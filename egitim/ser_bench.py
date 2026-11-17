@@ -45,7 +45,7 @@ def whisper_layers(name, seconds=None):
     enc = WhisperModel.from_pretrained(name).encoder.eval().to(DEV)
     if seconds:  # kısa pencere: konum gömmeleri kırpılır (30 sn dolgudan ~7 kat hızlı; temsil biraz farklı)
         npos = int(seconds * 50)
-        enc.embed_positions.weight.data = enc.embed_positions.weight.data[:npos]
+        enc.embed_positions = torch.nn.Embedding.from_pretrained(enc.embed_positions.weight.data[:npos].clone())
         enc.config.max_source_positions = npos
 
     def f(x):
