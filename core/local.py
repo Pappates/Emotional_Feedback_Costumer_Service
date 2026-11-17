@@ -44,8 +44,10 @@ WHISPER_MODEL = os.getenv("LOKAL_WHISPER", "small")
 # 4 duyguda UAR 0,79, valens AUC 0,90, uyarılma AUC 0,95; eski superb modeli UAR 0,27, valens AUC 0,46 (şanstan kötü).
 # Eski modele dönmek için: LOKAL_SES_DUYGU=superb/wav2vec2-base-superb-er
 # Örnekleme ayarları (Türkçe kalite deneyiyle belirlendi, bkz. README "Türkçe kalitesi")
-REPEAT_PENALTY = float(os.getenv("LOKAL_TEKRAR_CEZASI", "1.15"))
-TEMP_SCALE = float(os.getenv("LOKAL_SICAKLIK_CARPANI", "1.0"))
+# Tekrar cezası Türkçede ekleri ("-ım", "-de", "-ı") cezalandırıp garip ek seçimlerine itebiliyor; 90 örneklik deneyde
+# ceza kaldırılıp sıcaklık düşürülünce (×0,7) yazım hatası en az çıktı. Tekrarı uygulamanın kendi denetimleri önlüyor.
+REPEAT_PENALTY = float(os.getenv("LOKAL_TEKRAR_CEZASI", "1.0"))
+TEMP_SCALE = float(os.getenv("LOKAL_SICAKLIK_CARPANI", "0.7"))
 SER_MODEL = os.getenv("LOKAL_SES_DUYGU", "emotion2vec/emotion2vec_plus_base")
 SER_FALLBACK = "superb/wav2vec2-base-superb-er"
 TEXT_MODEL = os.getenv("LOKAL_METIN_DUYGU", "savasy/bert-base-turkish-sentiment-cased")

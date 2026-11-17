@@ -169,6 +169,10 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     """Model çıktısını telefon konuşmasına uygun hale getirir: '#1,' gibi kalıntılar, satır sonları, aşırı uzunluk,
     müşteriye okunan araç adları ('fatura_incele_iade aracını kullanacağım')."""
     t = re.sub(r"^\s*#\d+\s*[,.:-]?\s*", "", text or "")
+    # JSON/kod sızıntısı: model metni erken kapatıp '”} ```json {' gibi artıklarla devam edebiliyor; ilk artıkta kes
+    m = re.search(r"[”\"']\s*\}|```|\n\s*[{}]|\}\s*$", t)
+    if m:
+        t = t[:m.start()]
     for k, v in TOOL_SPOKEN.items():
         t = re.sub(rf"`?{k}`?(\s+aracını)?", v, t)
     t = re.sub(r"\[[^\]]{1,25}\]|\{[^}]{1,25}\}", "", t)          # "[adres]", "{mesaj}" gibi şablon kalıntıları
@@ -471,7 +475,9 @@ class Call:
                 continue
             text = clean_utterance(r.konusma)
             low = text.lower()
-            bad = (len(text.split()) < (4 if not self.history else 1) or _similar(text, last_agent) > 0.5
+            instr = ascii_tr(mood_speech(self.mood) + " " + mood_label(self.mood))
+            leak = len(text.split()) <= 5 and all(ascii_tr(w) in instr for w in re.findall(r"\w+", text) if len(w) > 2)
+            bad = (len(text.split()) < (4 if not self.history else 1) or _similar(text, last_agent) > 0.5 or leak
                    or (self.mode == "lokal" and low.rstrip(".!") in self.p["karakter"].lower())
                    or any(p in low for p in AGENT_PHRASES) or low.startswith(self.p["ad"].lower()))
             # Lokal modda: kendi önceki sözlerini tekrarlıyorsa ya da yeni sorunu açması gerekirken açmıyorsa

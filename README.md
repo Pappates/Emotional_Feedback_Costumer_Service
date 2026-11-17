@@ -135,6 +135,9 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_ASISTAN_SESI` | `dfki` | Asistanın Piper sesi: `dfki`, `fahrettin`, `99eren99` (erkek) ya da `fettah` (kadın) |
 | `LOKAL_CHATTERBOX_SES` | (modelin sesi) | Chatterbox için ses örneği (WAV yolu); asistanın sesi bu örnekten klonlanır |
 | `LOKAL_ASR_SOZLUK` | `1` | Whisper'a alan sözlüğü verilir (POS, iade, fatura…); `0` kapatır |
+| `LOKAL_TEKRAR_CEZASI` | `1.0` | Dil modelinin tekrar cezası. Türkçede ekleri cezalandırdığı için kapalı (eskiden 1,15) |
+| `LOKAL_SICAKLIK_CARPANI` | `0.7` | Tüm sıcaklıkların çarpanı (düşük = daha tutarlı, daha az yaratıcı) |
+| `LOKAL_YAZIM_DENETIMI` | `1` | Türkçe yazım denetimi (zeyrek + wordfreq); `0` kapatır |
 
 **Küçük modellerle yaşanan sorunlar ve alınan önlemler** (gerçek modellerle test edildi):
 
@@ -305,6 +308,19 @@ zamanın ~11 katı hızlı; large sürümden de iyi. Diğer bulgular:
   ses dilden bağımsız olarak uyarılmayı taşır, valens dile ve kültüre bağlıdır. Valens Türkçe veriyle öğretilmeli ve metinle birleştirilmeli.
 * Sınırlar: TurEV tek kelimelik, oyunculu kayıtlardan oluşuyor; gerçek konuşmada sayılar düşer. Asıl ölçüm `/etiket`
   test setinde yapılacak. emotion2vec+ lisansı "FunASR model lisansı"dır; ticari kullanımdan önce hukuk kontrolü gerekir.
+
+### Türkçe kalitesi (lokal mod)
+Gemma 3 4B zaman zaman bozuk Türkçe üretiyor. Ölçüm: gerçek bir görüşmeden alınan 15 istek, 3 ayar × 2 örnek (90 yanıt).
+* **Yazım denetimi** (`core/tr_check.py`): kelime biçimbilimsel olarak çözümlenemiyor (zeyrek) VE Türkçe sıklık
+  listesinde yoksa (wordfreq) bozuk sayılır; gelecek zaman, gereklilik ve -lik ekleri için ek kontroller var.
+  Test: 15 zor ama doğru kelimede yanlış alarm yok, 12 bozuk kelimenin hepsi yakalandı ("düzelacak", "söyleyorsunuz",
+  "almıssınız"…). Müşteri cümlesi bozuksa bir kez yeniden üretilir; asistanın bozuk cümlesi söylenmez; raporda görünür.
+* **Örnekleme:** tekrar cezası kaldırıldı (Türkçe ekleri cezalandırıyordu), sıcaklık ×0,7. Yazım hatası oranı üç
+  ayarda da %0-0,8; asıl sorun dilbilgisi/anlam ("faturala dalıyor musunuz") ve modelin boyutundan kaynaklanıyor.
+* **JSON/yönerge sızıntısı:** model metni erken kapatıp "”} ```json" ile sürdürebiliyordu; ilk artıkta kesiliyor.
+  Müşterinin "Sakin ve yumuşak" gibi yönerge kelimelerini konuşma diye söylemesi engellendi.
+* **Denenen alternatif:** Kumru-2B (Türkçe için sıfırdan eğitilmiş, Apache-2.0). Asistan rolünde akıcı ama müşteri
+  rolünü oynayamıyor (temsilci gibi konuşuyor), yönergeyi sızdırıyor, kelimeleri bitiştiriyor ("ikigündür"); elendi.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 
