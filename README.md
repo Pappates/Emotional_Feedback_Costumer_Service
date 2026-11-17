@@ -126,7 +126,8 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_WHISPER` | `small` | `base` daha hızlı, `medium` daha doğru |
 | `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
 | `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
-| `OLLAMA_URL` | `http://localhost:11434` | Ollama başka makinedeyse |
+| `OLLAMA_URL` | (otomatik) | Verilirse uygulama kendi Ollama sunucusunu açmaz, bu adresi kullanır |
+| `LOKAL_OZEL_OLLAMA` | `1` | `0` yapılırsa önbellek ayarlı özel Ollama sunucusu başlatılmaz |
 | `LOKAL_TTS` | `piper` | Asistan sesi motoru: `piper` (hızlı) ya da `chatterbox` (doğal ama yavaş) |
 | `LOKAL_ASISTAN_SESI` | `dfki` | Asistanın Piper sesi: `dfki`, `fahrettin`, `99eren99` (erkek) ya da `fettah` (kadın) |
 | `LOKAL_CHATTERBOX_SES` | (modelin sesi) | Chatterbox için ses örneği (WAV yolu); asistanın sesi bu örnekten klonlanır |
@@ -180,9 +181,15 @@ geçmişi her seferinde baştan işleniyordu. Yapılanlar:
 | Lokal modda "iç ses" modele yazdırılmıyor, cevaplar en fazla 2 cümle | Üretilen token 95-126 → 50-67 |
 | **Toplam** | **Asistan cevabı 32-43 sn → 14-20 sn** (aynı makine, aynı model) |
 
+**Önbellek ayarını uygulama kendisi yapar:** `OLLAMA_NUM_PARALLEL=2` ile kendi Ollama sunucusunu 11435 portunda
+başlatır (modeller aynı klasörden okunur, yeniden indirilmez). Ortam değişkeni ayarlamak ya da Ollama'yı yeniden
+başlatmak gerekmez. Konsolda `[lokal] Ollama önbellek ayarıyla ayrı sunucuda başlatıldı` satırı görünür. Kapatmak için
+`.env`'e `LOKAL_OZEL_OLLAMA=0` yazılabilir; `OLLAMA_URL` verilirse de özel sunucu açılmaz. Not: Ollama'nın kendi
+uygulaması da modeli bellekte tutuyorsa bir süre iki kopya bellekte kalabilir; RAM azsa Ollama simgesinden "Quit" yapılabilir.
+
 Önbelleğin çalıştığını konsoldaki satırlardan görebilirsin: `[lokal] LLM 15 sn = prompt 250 token (...)`. Buradaki
-token sayısı her turda birkaç yüz düzeyinde kalıyorsa önbellek çalışıyor; turdan tura büyüyorsa `OLLAMA_NUM_PARALLEL`
-ayarlı değil demektir. Ayarlamak için (Windows, bir kez): `setx OLLAMA_NUM_PARALLEL 2`, sonra Ollama'yı kapatıp aç.
+token sayısı her turda birkaç yüz düzeyinde kalıyorsa önbellek çalışıyor; turdan tura büyüyorsa çalışmıyor demektir
+(uygulama bu durumda konsola bir uyarı yazar, nedeni `data/ollama_ozel.log` dosyasında olur).
 
 **Türkçe okuma ve doğallık.** 12 cümle × 2 tekrar seslendirildi, ses Whisper medium ile geri dinlenip kelime hata oranı
 (WER) ölçüldü:

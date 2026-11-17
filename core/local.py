@@ -31,6 +31,12 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")   # Windows'ta zararsız ama kalabalık uyarı
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+# Hız için asistan ve müşterinin ayrı önbellek kullanması gerekiyor (OLLAMA_NUM_PARALLEL=2). Ortam değişkenini
+# kullanıcıya ayarlatmak yerine uygulama, bu ayarla kendi Ollama sunucusunu ayrı bir portta başlatır (modeller aynı
+# klasörden okunur, yeniden indirilmez). Kapatmak için .env: LOKAL_OZEL_OLLAMA=0, ya da OLLAMA_URL'yi kendin ver.
+PRIVATE_OLLAMA = os.getenv("LOKAL_OZEL_OLLAMA", "1") == "1" and not os.getenv("OLLAMA_URL")
+PRIVATE_PORT = int(os.getenv("LOKAL_OZEL_OLLAMA_PORT", "11435"))
+_private_proc = None
 # Testte qwen2.5:3b Türkçede rolleri karıştırıp yer tutucular ("[adres]") yazdı; gemma3:4b çok daha tutarlı.
 LLM_MODEL = os.getenv("LOKAL_LLM", "gemma3:4b")
 WHISPER_MODEL = os.getenv("LOKAL_WHISPER", "small")
@@ -117,6 +123,62 @@ def _ollama(path: str, payload: dict | None = None, timeout: float = 300):
         return json.loads(r.read().decode("utf-8"))
 
 
+def _find_ollama() -> str | None:
+    import shutil
+    exe = shutil.which("ollama")
+    if exe:
+        return exe
+    for cand in (os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+                 "/usr/local/bin/ollama", "/Applications/Ollama.app/Contents/Resources/ollama"):
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def start_private_ollama() -> bool:
+    """Önbellek için OLLAMA_NUM_PARALLEL=2 ayarlı ayrı bir Ollama sunucusu başlatır ve OLLAMA_URL'yi ona çevirir.
+    Başaramazsa mevcut Ollama (11434) ile devam edilir; uygulama yine çalışır, sadece daha yavaştır."""
+    global OLLAMA_URL, _private_proc
+    url = f"http://127.0.0.1:{PRIVATE_PORT}"
+    try:   # önceki çalıştırmadan kalmış sunucu varsa onu kullan
+        urllib.request.urlopen(url + "/api/tags", timeout=2)
+        OLLAMA_URL = url
+        STATUS["ollama_sunucu"] = f"özel sunucu ({PRIVATE_PORT}, önbellek açık)"
+        return True
+    except Exception:  # noqa: BLE001
+        pass
+    exe = _find_ollama()
+    if not exe:
+        STATUS["ollama_sunucu"] = "ollama komutu bulunamadı; mevcut Ollama kullanılıyor (önbellek kapalı olabilir)"
+        return False
+    import atexit
+    import subprocess
+    from . import config
+    env = dict(os.environ, OLLAMA_HOST=f"127.0.0.1:{PRIVATE_PORT}", OLLAMA_NUM_PARALLEL="2",
+               OLLAMA_KEEP_ALIVE="30m")
+    log = open(config.DATA_DIR / "ollama_ozel.log", "ab")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        _private_proc = subprocess.Popen([exe, "serve"], env=env, stdout=log, stderr=log, creationflags=flags)
+    except Exception as e:  # noqa: BLE001
+        STATUS["ollama_sunucu"] = f"özel sunucu başlatılamadı ({e}); mevcut Ollama kullanılıyor"
+        return False
+    atexit.register(lambda: _private_proc and _private_proc.poll() is None and _private_proc.terminate())
+    for _ in range(40):
+        time.sleep(0.5)
+        try:
+            urllib.request.urlopen(url + "/api/tags", timeout=2)
+            OLLAMA_URL = url
+            STATUS["ollama_sunucu"] = f"özel sunucu ({PRIVATE_PORT}, önbellek açık)"
+            print(f"[lokal] Ollama önbellek ayarıyla ayrı sunucuda başlatıldı: {url} (OLLAMA_NUM_PARALLEL=2)", flush=True)
+            return True
+        except Exception:  # noqa: BLE001
+            if _private_proc.poll() is not None:
+                break
+    STATUS["ollama_sunucu"] = "özel sunucu açılmadı (bkz. data/ollama_ozel.log); mevcut Ollama kullanılıyor"
+    return False
+
+
 def check_ollama() -> str:
     try:
         tags = _ollama("/api/tags", timeout=5)
@@ -165,8 +227,9 @@ def _log_timing(out: dict):
     if len(LLM_STATS) >= 5 and len(big) >= 2 and not STATUS.get("_onbellek_uyarisi"):
         STATUS["_onbellek_uyarisi"] = "1"
         print("[lokal] UYARI: Ollama önbelleği kullanılmıyor gibi görünüyor (konuşma geçmişi her turda baştan işleniyor). "
-              "Hız için bir kez 'setx OLLAMA_NUM_PARALLEL 2' çalıştırıp Ollama'yı saat yanındaki simgeden TAMAMEN kapatıp "
-              "yeniden açın. Doğru çalışınca bu satırdaki 'prompt' sayısı her turda birkaç yüzde kalır.", flush=True)
+              f"Şu anki sunucu: {OLLAMA_URL} ({STATUS.get('ollama_sunucu', '?')}). Özel sunucu açılamadıysa nedeni "
+              "data/ollama_ozel.log dosyasında. Doğru çalışınca bu satırdaki 'prompt' sayısı her turda birkaç yüzde kalır.",
+              flush=True)
     print(f"[lokal] LLM {st['toplam_sn']:.1f} sn = prompt {st['islenen_prompt']} token ({st['prompt_sn']:.1f} sn) "
           f"+ üretim {st['uretilen']} token ({st['uretim_sn']:.1f} sn)", flush=True)
 
@@ -243,8 +306,12 @@ SENT_SCALE = float(os.getenv("LOKAL_METIN_OLCEK", "0.6"))
 SER_VALENCE_WEIGHT = float(os.getenv("LOKAL_SES_VALENS_AGIRLIK", "0.1"))
 
 
+_CONTRA = r"(?:ama|ancak|fakat|yalnız|lakin)"
+CONTRA_WEIGHT = 3.0   # Türkçede asıl mesaj genelde zıtlık bağlacından sonra gelir ("Tamamdır, ama hemen aktarın!")
+
+
 def _split_sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?…])\s+|\s+(?=(?:ama|ancak|fakat|yalnız) )", text.strip())
+    parts = re.split(rf"(?<=[.!?…])\s+|\s*,?\s+(?={_CONTRA}\b)", text.strip(), flags=re.I)
     return [p for p in parts if len(p) > 2] or [text]
 
 
@@ -252,20 +319,25 @@ def text_sentiment(text: str) -> dict:
     """Hazır ikili (olumlu/olumsuz) model bütün mesaja bakınca en güçlü kelimeye göre ±1'e doyuyor; karışık
     mesajlarda ('Tamam, düzeldi. Ama bu kadar bekletmeyin!') çok yanılıyordu. Bu yüzden mesaj cümlelere ve
     'ama/ancak/fakat' öncesine bölünüp her parça ayrı puanlanır, ortalanır ve ölçek daraltılır (×0,6).
-    Test (16 cümle, gerçek ruh haline göre): MAE 0,63 -> 0,30, korelasyon 0,57 -> 0,59."""
+    Test (16 cümle, gerçek ruh haline göre): MAE 0,63 -> 0,30, korelasyon 0,57 -> 0,59.
+    "ama/ancak/fakat" sonrası parçalar 3 kat ağırlıklı (kullanıcı raporunda "Tamamdır, ama hemen aktarın!" olumlu
+    okunuyordu). Test (20 cümle): korelasyon 0,57 -> 0,60, MAE 0,30 -> 0,28."""
     def load():
         from transformers import pipeline
         return pipeline("text-classification", model=TEXT_MODEL, device=-1)
     clf = _get("metin_duygu", load)
     parts = _split_sentences(text[:1000])
-    vals, probs_all = [], []
+    vals, probs_all, weights, after = [], [], [], False
     for part in parts:
+        if re.match(rf"{_CONTRA}\b", part.strip(), flags=re.I):
+            after = True
+        weights.append(CONTRA_WEIGHT if after else 1.0)
         probs = {r["label"].lower(): float(r["score"]) for r in clf(part, top_k=None)}
         pos = sum(p for k, p in probs.items() if k.startswith(("pos", "olumlu")) or k in ("label_1",))
         neg = sum(p for k, p in probs.items() if k.startswith(("neg", "olumsuz")) or k in ("label_0",))
         vals.append(pos - neg)
         probs_all.append({"parca": part[:80], "valens": round(pos - neg, 3)})
-    return {"parcalar": probs_all, "valens": round(float(np.mean(vals)) * SENT_SCALE, 3)}
+    return {"parcalar": probs_all, "valens": round(float(np.average(vals, weights=weights)) * SENT_SCALE, 3)}
 
 
 # Yalnızca abonelikten ayrılma niyeti. Kullanıcı raporunda "Randevuyu iptal etmem gerekiyor" cümlesi tek başına
@@ -445,6 +517,8 @@ def _load_chatterbox():
 def warmup():
     """Uygulama açılırken modelleri arka planda yükler (ilk görüşme beklemesin)."""
     def run():
+        if PRIVATE_OLLAMA:
+            start_private_ollama()
         check_ollama()
         for name, fn in (("whisper", lambda: transcribe(float_to_wav(np.zeros(16000, np.float32), 16000))),
                          ("metin_duygu", lambda: text_sentiment("merhaba")),

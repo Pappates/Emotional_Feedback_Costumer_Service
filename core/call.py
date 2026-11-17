@@ -121,6 +121,10 @@ def promise_violations(text: str) -> list[str]:
               if not (m.group(1) in ("16", "18") and m.group(2) == "00")]
     if re.search(r"\byarin\b", t):
         found.append("yarın")
+    # iade yalnızca bir sonraki faturaya yansır; "hesabınıza aktarılacak/yatırılacak" uydurma söz
+    m = re.search(r"hesab\w*\s+(aktar|yatir|gec|gonder)\w*", t)
+    if m:
+        found.append(m.group(0))
     return found
 
 

@@ -38,7 +38,6 @@ if grep -qi '^SAGLAYICI=lokal' .env 2>/dev/null; then
   LLM=$(grep -i '^LOKAL_LLM=' .env | cut -d= -f2-); LLM=${LLM:-gemma3:4b}
   if command -v ollama >/dev/null; then
     ollama list | grep -qi "$LLM" || { echo "$LLM modeli indiriliyor (ilk sefer, ~3 GB)..."; ollama pull "$LLM"; }
-    [ -z "$OLLAMA_NUM_PARALLEL" ] && echo "[İPUCU] Hız için Ollama'yı OLLAMA_NUM_PARALLEL=2 ile başlatın (asistan ve müşteri ayrı önbellek kullanır)."
   else
     echo "[UYARI] Ollama bulunamadı. https://ollama.com/download adresinden kurun, sonra: ollama pull $LLM"
   fi

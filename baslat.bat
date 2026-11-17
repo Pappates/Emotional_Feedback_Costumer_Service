@@ -67,11 +67,6 @@ if errorlevel 1 (
   exit /b 0
 )
 ollama list | findstr /i /c:"%LLM%" >nul || (echo %LLM% modeli indiriliyor ^(ilk sefer, ~3 GB^)... & ollama pull %LLM%)
-if not defined OLLAMA_NUM_PARALLEL (
-  echo.
-  echo [IPUCU] Hiz icin Ollama'nin asistan ve musteri icin ayri onbellek tutmasini saglayin. Bir kez:
-  echo     setx OLLAMA_NUM_PARALLEL 2
-  echo komutunu calistirin, sonra Ollama'yi saat yanindaki simgeden kapatip yeniden acin.
-  echo.
-)
+rem Not: hiz icin gereken Ollama onbellek ayarini (OLLAMA_NUM_PARALLEL=2) uygulama kendi Ollama sunucusunu
+rem 11435 portunda baslatarak yapar; elle ayar gerekmez.
 exit /b 0
