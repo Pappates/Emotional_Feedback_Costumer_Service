@@ -40,7 +40,11 @@ _private_proc = None
 # Testte qwen2.5:3b Türkçede rolleri karıştırıp yer tutucular ("[adres]") yazdı; gemma3:4b çok daha tutarlı.
 LLM_MODEL = os.getenv("LOKAL_LLM", "gemma3:4b")
 WHISPER_MODEL = os.getenv("LOKAL_WHISPER", "small")
-SER_MODEL = os.getenv("LOKAL_SES_DUYGU", "superb/wav2vec2-base-superb-er")
+# Ses duygu modeli. Aşama 1 karşılaştırmasında (TurEV-DB, Türkçe, konuşmacı-dışarıda) emotion2vec+ base hazır hâliyle
+# 4 duyguda UAR 0,79, valens AUC 0,90, uyarılma AUC 0,95; eski superb modeli UAR 0,27, valens AUC 0,46 (şanstan kötü).
+# Eski modele dönmek için: LOKAL_SES_DUYGU=superb/wav2vec2-base-superb-er
+SER_MODEL = os.getenv("LOKAL_SES_DUYGU", "emotion2vec/emotion2vec_plus_base")
+SER_FALLBACK = "superb/wav2vec2-base-superb-er"
 TEXT_MODEL = os.getenv("LOKAL_METIN_DUYGU", "savasy/bert-base-turkish-sentiment-cased")
 # Türkçe Piper sesleri (hepsi CPU'da cümle başına ~0,15 sn). Önceden tek ses (dfki) farklı perdelere kaydırılarak
 # kullanılıyordu; bu sesi belirgin şekilde yapaylaştırıyordu. Artık her konuşmacının kendi gerçek sesi var.
@@ -336,21 +340,53 @@ SER_MAP = {
     "ang": (-0.75, 0.9), "angry": (-0.75, 0.9), "anger": (-0.75, 0.9),
     "sad": (-0.6, 0.2), "sadness": (-0.6, 0.2),
     "fear": (-0.6, 0.75), "fearful": (-0.6, 0.75), "disgust": (-0.65, 0.6), "surprise": (0.2, 0.8),
-    "calm": (0.2, 0.15),
+    "calm": (0.2, 0.15), "disgusted": (-0.65, 0.6), "surprised": (0.2, 0.8),
 }
+# emotion2vec+ etiketleri "生气/angry" biçiminde; kısa Türkçe adlar rapor ve panel için
+SER_TR = {"angry": "öfke", "disgusted": "tiksinti", "fearful": "korku", "happy": "mutluluk", "neutral": "nötr",
+          "sad": "üzüntü", "surprised": "şaşkınlık", "ang": "öfke", "hap": "mutluluk", "neu": "nötr"}
+
+
+def _load_ser():
+    """emotion2vec+ (FunASR) yüklenemezse eski transformers modeline düşer; uygulama çalışmaya devam eder."""
+    global SER_MODEL
+    if SER_MODEL.startswith("emotion2vec"):
+        import logging
+        # FunASR kök kaydediciyi INFO'ya çekiyor: konsol "[INFO] init param" ve HTTP satırlarıyla doluyordu
+        logging.disable(logging.INFO)
+        try:
+            import contextlib
+            from funasr import AutoModel
+            # "Warning, miss key in ckpt" satırları zararsız (yalnızca ön eğitimde kullanılan çözücü katmanları)
+            with contextlib.redirect_stdout(io.StringIO()):
+                m = AutoModel(model=SER_MODEL, hub="hf", disable_update=True, device="cpu", log_level="ERROR")
+
+            logging.getLogger().setLevel(logging.WARNING)
+            logging.disable(logging.NOTSET)
+
+            def run(x):
+                r = m.generate(x, granularity="utterance", extract_embedding=False, disable_pbar=True)[0]
+                return {l.split("/")[-1].lower(): float(p) for l, p in zip(r["labels"], r["scores"])}
+            return run
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger().setLevel(logging.WARNING)
+            logging.disable(logging.NOTSET)
+            print(f"[lokal] {SER_MODEL} yüklenemedi ({str(e)[:120]}); {SER_FALLBACK} kullanılıyor. "
+                  "Kurulum: pip install funasr", flush=True)
+            SER_MODEL = SER_FALLBACK
+    from transformers import pipeline
+    clf = pipeline("audio-classification", model=SER_MODEL, device=-1)
+    return lambda x: {r["label"].lower(): float(r["score"]) for r in clf({"raw": x, "sampling_rate": 16000}, top_k=None)}
 
 
 def speech_emotion(wav_bytes: bytes) -> dict:
-    def load():
-        from transformers import pipeline
-        return pipeline("audio-classification", model=SER_MODEL, device=-1)
-    clf = _get("ses_duygu", load)
-    res = clf({"raw": wav_to_float(wav_bytes), "sampling_rate": 16000}, top_k=None)
-    probs = {r["label"].lower(): float(r["score"]) for r in res}
+    run = _get("ses_duygu", _load_ser)
+    probs = {k: p for k, p in run(wav_to_float(wav_bytes)).items() if k not in ("other", "<unk>", "unk")}
     tot = sum(p for k, p in probs.items() if k in SER_MAP) or 1.0
     v = sum(SER_MAP[k][0] * p for k, p in probs.items() if k in SER_MAP) / tot
     a = sum(SER_MAP[k][1] * p for k, p in probs.items() if k in SER_MAP) / tot
-    return {"olasiliklar": {k: round(p, 3) for k, p in probs.items()}, "valens": round(v, 3), "uyarilma": round(a, 3)}
+    return {"olasiliklar": {k: round(p, 3) for k, p in probs.items()}, "valens": round(v, 3), "uyarilma": round(a, 3),
+            "model": SER_MODEL}
 
 
 # ============================================================ metinden duygu, churn, konu
@@ -358,7 +394,12 @@ SENT_SCALE = float(os.getenv("LOKAL_METIN_OLCEK", "0.6"))
 # İngilizce oyunculu konuşmayla eğitilmiş ses duygu modeli, Türkçe öfkeli müşteriyi %80-95 "mutlu" sınıflıyor ve
 # valensi yukarı çekiyordu (gerçek kullanıcı raporunda ortalama sapma +0,20). Valensteki payı %40'tan %10'a indirildi;
 # uyarılmışlıkta (sesin gerginliği) kullanılmaya devam ediyor. Türkçe veriyle eğitilince artırılabilir.
-SER_VALENCE_WEIGHT = float(os.getenv("LOKAL_SES_VALENS_AGIRLIK", "0.1"))
+# emotion2vec+ ile ses valensi Türkçede güvenilir (AUC 0,90) olduğundan pay %30; eski modelde %10 kalır.
+# Metin hâlâ ağırlıklı: gerçek konuşmada sözün içeriği (şikâyet, teşekkür) oyunculu kayıtlardan daha belirleyici.
+SER_VALENCE_WEIGHT = float(os.getenv("LOKAL_SES_VALENS_AGIRLIK", "0.3"))
+SER_VALENCE_WEIGHT_OLD = 0.1
+# Uyarılmada ses modeli (AUC 0,95) akustik ölçümden (eGeMAPS bile 0,76) çok daha iyi
+SER_AROUSAL_WEIGHT = float(os.getenv("LOKAL_SES_UYARILMA_AGIRLIK", "0.7"))
 
 
 _CONTRA = r"(?:ama|ancak|fakat|yalnız|lakin)"
@@ -449,24 +490,26 @@ def _voice_cues(feats: dict, ser: dict | None) -> str:
         parts.append("dalgalı/gergin perde" if feats["perde_dalgalanma"] > 0.18 else "düz perde")
     if ser:
         top = max(ser["olasiliklar"], key=ser["olasiliklar"].get)
-        parts.append(f"ses modeli: {top} (%{ser['olasiliklar'][top] * 100:.0f})")
+        parts.append(f"ses modeli: {SER_TR.get(top, top)} (%{ser['olasiliklar'][top] * 100:.0f})")
     return ", ".join(parts) or "–"
 
 
 def analyze(text: str, wav_bytes: bytes | None, acoustic: dict | None) -> dict:
     """Gemini analiziyle aynı alanları üretir. Füzyon:
-       valens    = 0,9 × metin duygu modeli + 0,1 × ses duygu modeli (ses yoksa yalnızca metin) + kelime ipuçları
-       uyarılma  = 0,5 × ses duygu modeli + 0,5 × akustik gerginlik
+       valens    = 0,7 × metin duygu modeli + 0,3 × ses duygu modeli (ses yoksa yalnızca metin) + kelime ipuçları
+       uyarılma  = 0,7 × ses duygu modeli + 0,3 × akustik gerginlik
+       (eski superb modeline düşülürse valenste ses payı 0,1)
        churn     = sigmoid(−3·(valens + 0,2)); açık ayrılma ifadesi varsa en az 0,85"""
     tx = text_sentiment(text)
     cues = text_cues(text)
     ser = speech_emotion(wav_bytes) if wav_bytes else None
     v_text = tx["valens"] + 0.08 * len(cues["olumlu"]) - 0.08 * len(cues["olumsuz"])
-    v = (1 - SER_VALENCE_WEIGHT) * v_text + SER_VALENCE_WEIGHT * ser["valens"] if ser else v_text
+    wv = SER_VALENCE_WEIGHT if SER_MODEL.startswith("emotion2vec") else SER_VALENCE_WEIGHT_OLD
+    v = (1 - wv) * v_text + wv * ser["valens"] if ser else v_text
     v = float(np.clip(v, -1, 1))
     ac = (acoustic or {}).get("akustik_uyarilma")
     if ser and ac is not None:
-        a = 0.5 * ser["uyarilma"] + 0.5 * ac
+        a = SER_AROUSAL_WEIGHT * ser["uyarilma"] + (1 - SER_AROUSAL_WEIGHT) * ac
     elif ser:
         a = ser["uyarilma"]
     elif ac is not None:

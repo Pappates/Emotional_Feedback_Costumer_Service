@@ -4,4 +4,5 @@ piper-tts>=1.2
 transformers>=4.40
 torch>=2.2
 huggingface_hub>=0.23
+funasr>=1.1          # ses duygu modeli emotion2vec+ (Aşama 1 karşılaştırmasının kazananı)
 soundfile>=0.12        # isteğe bağlı Chatterbox sesi için

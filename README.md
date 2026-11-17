@@ -124,7 +124,9 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `SAGLAYICI` | `gemini` | `lokal` yapınca bulut kullanılmaz |
 | `LOKAL_LLM` | `gemma3:4b` | Ollama modeli. Daha hızlı ama daha zayıf: `gemma3:1b`; daha iyi ama yavaş: `gemma3:12b` |
 | `LOKAL_WHISPER` | `small` | `base` daha hızlı, `medium` daha doğru |
-| `LOKAL_SES_DUYGU` | `superb/wav2vec2-base-superb-er` | Hugging Face'teki herhangi bir audio-classification modeli |
+| `LOKAL_SES_DUYGU` | `emotion2vec/emotion2vec_plus_base` | Ses duygu modeli (Aşama 1 karşılaştırmasının kazananı, FunASR ile). Eski model: `superb/wav2vec2-base-superb-er`; Hugging Face'teki herhangi bir audio-classification modeli de verilebilir |
+| `LOKAL_SES_VALENS_AGIRLIK` | `0.3` | Valens füzyonunda sesin payı (kalanı metin) |
+| `LOKAL_SES_UYARILMA_AGIRLIK` | `0.7` | Uyarılma füzyonunda ses modelinin payı (kalanı akustik ölçüm) |
 | `LOKAL_METIN_DUYGU` | `savasy/bert-base-turkish-sentiment-cased` | Hugging Face'teki herhangi bir Türkçe text-classification modeli |
 | `OLLAMA_URL` | (otomatik) | Verilirse uygulama kendi Ollama sunucusunu açmaz, bu adresi kullanır |
 | `LOKAL_GECMIS` | `4` | Lokal modda modele verilen son mesaj sayısı (fazlası promptu ve bekleme süresini büyütür) |
@@ -287,6 +289,13 @@ uyarılma/valens ikili görevlerde 0,50. RTF: işlem süresi / ses süresi (CPU,
 **Colab (T4 GPU) tekrarı** (`egitim/sonuc_colab_turev.json`): sonuçlar CPU ölçümüyle aynı çıktı (emotion2vec+ base 0,774,
 large 0,708; superb 0,464), yani karşılaştırma tekrarlanabilir. Yalnızca Colab'da ölçülebilen **whisper-small (30 sn dolgu)**:
 UAR 0,603, ±0,108, uyarılma 0,814, valens 0,683; genel konuşma modellerinin en iyisi ama emotion2vec+ base'in gerisinde.
+
+**Uygulamaya alındı (eğitimsiz hâli):** lokal modda ses duygu modeli artık emotion2vec+ base. Hazır olasılıkları valens ve
+uyarılmaya çevrildiğinde TurEV'de valens AUC 0,90, uyarılma AUC 0,95 (eski model 0,46 / 0,60). Bu yüzden füzyon
+`valens = 0,7·metin + 0,3·ses`, `uyarılma = 0,7·ses + 0,3·akustik` oldu. Kayıt başına ~0,1 sn (CPU). Model
+yüklenemezse (ör. `funasr` kurulu değilse) uygulama eski modele düşer ve konsola yazar. Not: simülasyondaki Piper
+müşteri sesi duygu taşımadığından model onu doğru şekilde %90-100 "nötr" duyuyor; ses kanalının simülasyonda da
+işe yaraması için duygulu TTS (Aşama 3) gerekiyor.
 
 **Karar: ince ayar emotion2vec+ base ile yapılacak.** Hem en doğru hem konuşmacılar arası en tutarlı, CPU'da gerçek
 zamanın ~11 katı hızlı; large sürümden de iyi. Diğer bulgular:

@@ -267,11 +267,12 @@ METHOD_LOKAL = """
 <li><b>Metinden duygu (Türkçe BERT, yerel).</b> Mesaj cümlelere ve "ama/ancak/fakat" öncesine bölünür, her parça ayrı puanlanır
 (olumlu olasılığı − olumsuz olasılığı), ortalanır ve ×0,6 ile ölçeklenir. Üzerine kelime ipuçları eklenir
 (olumlu kelime başına +0,08, olumsuz kelime başına −0,08).</li>
-<li><b>Sesten duygu (wav2vec2, yerel).</b> Model öfke / mutluluk / üzüntü / nötr olasılıkları verir; bunlar valens ve uyarılmışlığa
-çevrilir. Model İngilizce oyunculu konuşmayla eğitildiği için Türkçede güvenilir değildir; bu yüzden valense yalnızca %10 katılır.</li>
+<li><b>Sesten duygu (emotion2vec+ base, yerel).</b> Duyguya özel ön eğitimli model öfke, mutluluk, üzüntü, korku, tiksinti,
+şaşkınlık ve nötr olasılıklarını verir; bunlar valens ve uyarılmışlığa çevrilir. Aşama 1 karşılaştırmasında 11 aday arasında
+Türkçede en iyisi çıktı (TurEV-DB, görülmemiş konuşmacılar: 4 duygu UAR 0,79, valens AUC 0,90, uyarılma AUC 0,95).</li>
 <li><b>Akustik özellikler (yerel, numpy).</b> 40 ms'lik pencerelerde enerji (RMS → dB), otokorelasyonla perde (70–400 Hz),
 perde dalgalanması ve konuşma hızı ölçülür; <code>0,4·enerji + 0,3·hız + 0,3·perde dalgalanması</code> ile akustik gerginlik çıkar.</li>
-<li><b>Füzyon.</b> <code>valens = 0,9·metin + 0,1·ses modeli</code>, <code>uyarılma = 0,5·ses modeli + 0,5·akustik</code>,
+<li><b>Füzyon.</b> <code>valens = 0,7·metin + 0,3·ses modeli</code>, <code>uyarılma = 0,7·ses modeli + 0,3·akustik</code>,
 <code>churn = sigmoid(−3·(valens + 0,2))</code>; "iptal", "başka operatöre geçeceğim" gibi açık ayrılma ifadesi varsa en az 0,85.
 Konu ve ayrılma niyeti Türkçe anahtar kelime kurallarıyla bulunur.</li>
 <li><b>Psikolojik katman.</b> Valens ve uyarılmaya PAD modelinin üçüncü boyutu <b>baskınlık</b> (talepkâr ↔ çaresiz) eklenir.
