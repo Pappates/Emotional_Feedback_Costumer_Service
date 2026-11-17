@@ -144,7 +144,8 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*\)", "", t, flags=re.I)  # geçmişteki notları okumasın
     t = t.translate(_CYRILLIC)                                       # "Haklıсыз" gibi karışan Kiril harfleri
     t = re.sub(r"\byox\b", "yok", t)                                # Azerice karışması
-    t = re.sub(r"\s+lan\b", "", t, flags=re.I)                      # argo
+    t = re.sub(r"(^|\s)lan\b[,!]?\s*", r"\1", t, flags=re.I).strip()   # argo (cümle başında da)
+    t = t[:1].upper() + t[1:] if t else t
     t = re.sub(r"[\u3000-\u9fff\uac00-\ud7af\u0600-\u06ff]+", "", t)  # araya karışan Çince/Korece/Arapça karakterler
     t = re.sub(r"[”\"'}{\]\[]{2,}", "", t)                          # '”}”}”}' gibi JSON kalıntıları
     t = re.sub(r"[”“\"]", "", t.strip())                              # telefonda tırnak okunmaz; kalıntıları at

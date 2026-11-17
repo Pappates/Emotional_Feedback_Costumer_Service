@@ -28,6 +28,7 @@ from pydantic import BaseModel
 # Hugging Face'in "Xet" indirme protokolü ayrı sunuculara gidiyor; kurumsal proxy'lerde sorun çıkarabildiği için
 # klasik HTTP indirmeyi kullan (kullanıcı isterse HF_HUB_DISABLE_XET=0 ile açabilir).
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")   # Windows'ta zararsız ama kalabalık uyarı
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 # Testte qwen2.5:3b Türkçede rolleri karıştırıp yer tutucular ("[adres]") yazdı; gemma3:4b çok daha tutarlı.
@@ -160,6 +161,12 @@ def _log_timing(out: dict):
         return
     LLM_STATS.append(st)
     del LLM_STATS[:-50]
+    big = [x for x in LLM_STATS[-4:] if x["islenen_prompt"] > 600]
+    if len(LLM_STATS) >= 5 and len(big) >= 2 and not STATUS.get("_onbellek_uyarisi"):
+        STATUS["_onbellek_uyarisi"] = "1"
+        print("[lokal] UYARI: Ollama önbelleği kullanılmıyor gibi görünüyor (konuşma geçmişi her turda baştan işleniyor). "
+              "Hız için bir kez 'setx OLLAMA_NUM_PARALLEL 2' çalıştırıp Ollama'yı saat yanındaki simgeden TAMAMEN kapatıp "
+              "yeniden açın. Doğru çalışınca bu satırdaki 'prompt' sayısı her turda birkaç yüzde kalır.", flush=True)
     print(f"[lokal] LLM {st['toplam_sn']:.1f} sn = prompt {st['islenen_prompt']} token ({st['prompt_sn']:.1f} sn) "
           f"+ üretim {st['uretilen']} token ({st['uretim_sn']:.1f} sn)", flush=True)
 
@@ -265,11 +272,15 @@ def text_sentiment(text: str) -> dict:
 # "iptal" kelimesi yüzünden churn %85 sayılmıştı; artık iptalin neyle ilgili olduğuna bakılıyor.
 CHURN_PATTERNS = [r"(abonelik|aboneliğ|hat|sözleşme|üyelik|internet)\w*[^.!?]{0,30}(iptal|sonlandır|kapattır)",
                   r"iptal ettir", r"başka (bir )?operat", r"operatör\w* değiştir", r"(rakip|başka) (firma|şirket)",
-                  r"(operatör|firma|şirket)\w*[^.!?]{0,20}geç(eceğim|iyorum|erim)", r"sizden ayrıl", r"bir daha sizinle"]
+                  r"(operatör|firma|şirket)\w*[^.!?]{0,20}geç(eceğim|iyorum|erim)", r"sizden ayrıl", r"bir daha sizinle",
+                  r"iptal\w*[^.!?]{0,30}(sözleşme|abonelik|aboneliğ|hattı)"]
 TOPICS = {
-    "internet_kesintisi": [r"internet(im)? (yok|gitti|kesik|çalışmıyor)", r"kesinti", r"kesildi", r"bağlantı yok", r"\bpos\b", r"modem"],
+    # "post": Whisper "POS"u sık sık "post" diye yazıyor; kullanıcı raporunda POS cümlesi bu yüzden faturaya sayılmıştı
+    "internet_kesintisi": [r"internet\w*\s+(yok|gitti|kesik|çalışmıyor|gelmiyor)", r"kesinti", r"kesildi", r"bağlantı yok",
+                           r"\bpos\w*", r"\bpost\b", r"modem"],
     "hiz_sorunu": [r"yavaş", r"\bhız", r"mbps", r"kopuyor", r"donuyor", r"ping"],
-    "fatura_itirazi": [r"fatura", r"ücret", r"tutar", r"\blira\b", r"\btl\b", r"iade", r"ödeme", r"para"],
+    # yalın "para" çıkarıldı: "para kaybediyorum / para geçirmiyorum" internet kesintisi cümlelerinde de geçiyor
+    "fatura_itirazi": [r"fatura", r"ücret", r"tutar", r"\blira\b", r"\btl\b", r"iade", r"ödeme", r"ek paket"],
     "nakil": [r"taşın", r"nakil", r"adres", r"yeni ev", r"ofis(imi)? taşı"],
 }
 POSITIVE = [r"teşekkür", r"sağ ?ol", r"memnun", r"sevindim", r"harika", r"süper", r"rahatladım", r"çok iyi"]

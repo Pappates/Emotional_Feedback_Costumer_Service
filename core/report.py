@@ -369,7 +369,9 @@ def to_html(rep: dict) -> str:
                     f'<tr><td>Uyarılma</td><td class="num">{an["uyarilma"]:.2f}</td></tr>'
                     f'<tr><td>Churn riski</td><td class="num">%{an["churn_riski"]*100:.0f}</td></tr>'
                     f'<tr><td>Algılanan konu</td><td class="num">{E(ISSUES.get(an["konu"], {}).get("ad", "Diğer"))}</td></tr>{fusion}</tbody></table>'
-                    f'<p class="cue"><b>Ses ipuçları:</b> {E(an.get("ses_ipuclari") or "–")}</p>'
+                    + (f'<p class="cue"><b>Whisper\'ın duyduğu:</b> {E(an["transkript"])}</p>'
+                       if an.get("transkript") and an["transkript"].strip() != mu["metin"].strip() else "")
+                    + f'<p class="cue"><b>Ses ipuçları:</b> {E(an.get("ses_ipuclari") or "–")}</p>'
                     f'<p class="cue"><b>Söz ipuçları:</b> {E(an.get("metin_ipuclari") or "–")}</p></div>'
                     f'<div><h4>Akustik özellikler</h4>'
                     + (f'<table class="mini"><tbody>{ac}</tbody></table>' if ac else '<p class="note">Bu turda ses kaydı yok (metin analizi).</p>')
