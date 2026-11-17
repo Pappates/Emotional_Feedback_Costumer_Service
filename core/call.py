@@ -98,8 +98,8 @@ AGENT_PHRASES = ["size nasıl yardımcı", "yardımcı olabilirim", "yardımcı 
                  "müşterilerimiz", "temsilciniz", "size en uygun çözüm"]
 TOOL_HINTS = {  # lokal modda model aracı çağırmayı unutup "açıyorum" derse, cevaptan işlemi çıkar
     # Desenler Türkçe karaktersiz yazılır; metin de karaktersizleştirilip aranır ("ariza" = "arıza")
-    "ariza_kaydi_ac": r"ariza (kayd|bildirim)",
-    "teknisyen_randevusu": r"teknisyen|randevu|saha ekib",
+    "ariza_kaydi_ac": r"ariza (kayd|bildirim)|saha ekib|(4|dort) saat",
+    "teknisyen_randevusu": r"teknisyen|randevu",
     "fatura_incele_iade": r"\biade|(fatura|ucret|paket|tutar)\w*[^.!?]{0,40}(sil|kaldir|duzelt|incele|iptal|geri|kontrol)",
     "nakil_islemi": r"nakil|nakl|tasima islem|yeni adres",
     "hat_optimizasyonu": r"hat test|optimiz|port\w* (ayar|yenile|sifirla)",
@@ -132,7 +132,12 @@ COMPANY_FACTS = ("Arıza kaydı açılınca saha ekibi 4 saat içinde müdahale 
 def promise_violations(text: str) -> list[str]:
     """Şirket kurallarında olmayan süre/saat sözlerini bulur ('yarım saat içinde', 'yarın sabah', '10:00')."""
     t = ascii_tr(text)
-    allowed = {"4 saat", "dort saat", "2 is gunu", "iki is gunu"}
+    # İzinli süreler yalnızca kendi konusunda: 4 saat = arıza/saha ekibi, 2 iş günü = nakil (fatura için "2 iş günü" uydurma)
+    allowed = set()
+    if re.search(r"ariza|saha|ekip|teknik|muhendis|kesinti", t):
+        allowed |= {"4 saat", "dort saat"}
+    if re.search(r"nakil|nakl|tasin|adres", t):
+        allowed |= {"2 is gunu", "iki is gunu"}
     found = [m.group(0) for m in re.finditer(
         r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\b", t)
         if m.group(0) not in allowed]
@@ -164,7 +169,8 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
     for k, v in TOOL_SPOKEN.items():
         t = re.sub(rf"`?{k}`?(\s+aracını)?", v, t)
     t = re.sub(r"\[[^\]]{1,25}\]|\{[^}]{1,25}\}", "", t)          # "[adres]", "{mesaj}" gibi şablon kalıntıları
-    t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*\)", "", t, flags=re.I)  # geçmişteki notları okumasın
+    t = re.sub(r"\((?:işlem sonucu|islem sonucu|not|sistem)[^)]*(\)|$)", "", t, flags=re.I)
+    t = re.sub(r"[(\[{][^)\]}]{0,40}$", "", t)                       # sonda kapanmamış parantez kalıntısı  # geçmişteki notları okumasın
     t = t.translate(_CYRILLIC)                                       # "Haklıсыз" gibi karışan Kiril harfleri
     t = re.sub(r"\byox\b", "yok", t)                                # Azerice karışması
     t = re.sub(r"(^|\s)lan\b[,!]?\s*", r"\1", t, flags=re.I).strip()   # argo (cümle başında da)
@@ -554,6 +560,8 @@ class Call:
             print(f"[koruma] akış hatası: {str(e)[:100]}", flush=True)
         text, _ = partial_json_string(buf, "cevap")
         tail = text[emitted_upto:].strip()
+        if spoken and tail and not re.search(r"[.!?…]$", tail):   # uzunluk sınırında kesilmiş: söyleme
+            tail = ""
         if tail and len(spoken) < 3:
             for sent in re.split(r"(?<=[.!?…])\s+", tail):
                 ok = accept(sent)
@@ -831,6 +839,10 @@ class Call:
                     if useful:
                         out["araclar"].append(tool)
                         out["metinden_araclar"].append(tool)
+        if self.mode == "lokal" and self.kampanya and "kampanya_tanimla" in out["araclar"]:
+            out["araclar"].remove("kampanya_tanimla")       # kampanya zaten tanımlandı: ikinci kez yazma
+            if "kampanya_tanimla" in out["metinden_araclar"]:
+                out["metinden_araclar"].remove("kampanya_tanimla")
         if self.mode == "lokal":
             islem = ", ".join(TOOL_SPOKEN[a] for a in out.get("araclar", []) if a in TOOL_SPOKEN)
             out["ic_ses"] = (f"{STRATEGIES[s]['ad']} ve {TONES[t]['ad'].lower()} ton deniyorum"

@@ -281,6 +281,7 @@ def chat_stream(system: str, prompt: str, schema: type[BaseModel], temperature: 
     }
     req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=json.dumps(payload).encode("utf-8"),
                                  headers={"Content-Type": "application/json"}, method="POST")
+    t0 = time.time()   # Ollama başlığı ilk token hazır olunca gönderiyor: süre istekten itibaren ölçülmeli
     try:
         resp = urllib.request.urlopen(req, timeout=300)
     except urllib.error.HTTPError as e:
@@ -290,7 +291,6 @@ def chat_stream(system: str, prompt: str, schema: type[BaseModel], temperature: 
     except urllib.error.URLError as e:
         raise RuntimeError(f"Ollama'ya bağlanılamadı ({OLLAMA_URL}). Ollama açık mı? ({e.reason})") from e
     STATUS["llm"] = f"hazır ({LLM_MODEL})"
-    t0 = time.time()
     first = None
     with resp:
         for line in resp:
