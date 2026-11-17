@@ -51,9 +51,13 @@ def loso(X, y, spk, layers):
     return balanced_accuracy_score(y, pred), np.std(per_spk), chosen
 
 
+RES = os.path.join(CACHE, "sonuc.json")
+done = {r["model"]: r for r in json.load(open(RES))} if os.path.exists(RES) else {}   # önceki sonuçlar yeniden hesaplanmaz
 rows = []
 for path in sorted(glob.glob(os.path.join(CACHE, "*.npz"))):
     name = os.path.basename(path)[:-4]
+    if name in done:
+        rows.append(done[name]); continue
     d = np.load(path, allow_pickle=True)
     X, y, spk, rtf = d["X"], d["y"], d["spk"], float(d["rtf"])
     L = X.shape[1]
@@ -85,10 +89,11 @@ for path in sorted(glob.glob(os.path.join(CACHE, "*.npz"))):
             row["zs_uar4"] = balanced_accuracy_score(y, pr)
     rows.append(row)
     print(json.dumps(row, ensure_ascii=False), flush=True)
+    json.dump(rows, open(RES, "w"), ensure_ascii=False, indent=1)
 
 print("\nmodel                    UAR(4) ±konuşmacı  uyarılma  valens   RTF    katman  hazır tahmin")
 for r in sorted(rows, key=lambda r: -r["uar4"]):
     zs = " ".join(f"{k[3:]}={v:.2f}" for k, v in r.items() if k.startswith("zs_"))
     print(f"{r['model']:24s} {r['uar4']:.3f}  ±{r['sd_spk']:.3f}     {r['arousal']:.3f}    {r['valence']:.3f}  {r['rtf']:.3f}  "
           f"{r['layer']:>2}/{r['layers'] - 1}   {zs}")
-json.dump(rows, open(os.path.join(CACHE, "sonuc.json"), "w"), ensure_ascii=False, indent=1)
+json.dump(rows, open(RES, "w"), ensure_ascii=False, indent=1)
