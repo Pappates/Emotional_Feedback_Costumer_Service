@@ -311,12 +311,20 @@ def chat_stream(system: str, prompt: str, schema: type[BaseModel], temperature: 
 
 
 # ============================================================ ses -> metin
+# Alan sözlüğü: Whisper "POS" -> "Post", "iade" -> "Yadem" gibi alan terimlerini yanlış duyuyordu (kullanıcı raporları).
+# Kısa bir bağlam cümlesi modeli bu kelimelere yönlendirir. Kapatmak için LOKAL_ASR_SOZLUK=0.
+ASR_PROMPT = ("Telekom çağrı merkezi görüşmesi. İnternet, modem, POS cihazı, fatura, iade, ek paket, taahhüt, "
+              "nakil, teknisyen, arıza kaydı, fiber, megabit, operatör.")
+ASR_USE_PROMPT = os.getenv("LOKAL_ASR_SOZLUK", "1") != "0"
+
+
 def transcribe(wav_bytes: bytes) -> str:
     def load():
         from faster_whisper import WhisperModel
         return WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
     model = _get("whisper", load)
-    segs, _ = model.transcribe(wav_to_float(wav_bytes), language="tr", beam_size=1, condition_on_previous_text=False)
+    segs, _ = model.transcribe(wav_to_float(wav_bytes), language="tr", beam_size=1, condition_on_previous_text=False,
+                             initial_prompt=ASR_PROMPT if ASR_USE_PROMPT else None)
     return " ".join(s.text.strip() for s in segs).strip()
 
 
@@ -503,23 +511,29 @@ def style_params(style: str) -> dict:
     """Gemini tarzı tonlama talimatını Piper parametrelerine çevirir.
     length_scale > 1 yavaşlatır; volume ses yüksekliği; pitch perde çarpanı."""
     s = style.lower()
-    table = [
-        ("angry", 0.86, 1.0, 1.04), ("irritated", 0.92, 0.95, 1.02), ("tired", 1.05, 0.75, 0.98),
-        ("calmer", 1.08, 0.8, 1.0), ("happy", 0.98, 0.9, 1.05), ("warm, slow", 1.18, 0.8, 0.98),
-        ("upbeat", 0.9, 0.95, 1.06), ("professional", 0.98, 0.9, 1.0), ("friendly", 1.0, 0.85, 1.03),
+    # Psikoakustik karşılıklar (Juslin & Laukka 2003): yüksek uyarılma = hızlı, yüksek sesli, perdesi ve perde
+    # değişkenliği yüksek; düşük uyarılma = yavaş, alçak, düz. rms_db: konuşmalı bölümlerin hedef ses seviyesi (dBFS).
+    # noise / noise_w: Piper'ın tını ve süre değişkenliği (varsayılan 0,667 / 0,8): yüksek = daha canlı, düzensiz.
+    table = [  # anahtar, hız (length_scale), rms_db, perde, noise, noise_w
+        ("angry", 0.82, -13.0, 1.05, 0.80, 1.00), ("irritated", 0.90, -16.0, 1.03, 0.72, 0.90),
+        ("tired", 1.10, -23.0, 0.97, 0.55, 0.60), ("calmer", 1.06, -21.0, 0.99, 0.60, 0.70),
+        ("happy", 0.96, -17.0, 1.05, 0.70, 0.85), ("warm, slow", 1.15, -20.0, 0.98, 0.60, 0.70),
+        ("upbeat", 0.92, -17.0, 1.05, 0.72, 0.90), ("professional", 0.98, -19.0, 1.0, 0.62, 0.75),
+        ("friendly", 1.0, -19.0, 1.02, 0.66, 0.80),
     ]
-    for key, ls, vol, pitch in table:
+    for key, ls, rms_db, pitch, ns, nw in table:
         if key in s:
-            return {"length_scale": ls, "volume": vol, "pitch": pitch}
-    return {"length_scale": 1.0, "volume": 0.9, "pitch": 1.0}
+            return {"length_scale": ls, "rms_db": rms_db, "pitch": pitch, "noise": ns, "noise_w": nw}
+    return {"length_scale": 1.0, "rms_db": -19.0, "pitch": 1.0, "noise": 0.667, "noise_w": 0.8}
 
 
-def _synth(voice, text: str, length_scale: float) -> tuple[np.ndarray, int]:
+def _synth(voice, text: str, length_scale: float, noise: float = 0.667, noise_w: float = 0.8) -> tuple[np.ndarray, int]:
     """piper-tts sürümleri arasında API farkı var: ikisini de destekle."""
     sr = voice.config.sample_rate
     try:  # piper-tts >= 1.3
         from piper import SynthesisConfig
-        chunks = voice.synthesize(text, syn_config=SynthesisConfig(length_scale=length_scale))
+        chunks = voice.synthesize(text, syn_config=SynthesisConfig(length_scale=length_scale, noise_scale=noise,
+                                                                   noise_w_scale=noise_w))
         arrs = [c.audio_float_array for c in chunks]
         return (np.concatenate(arrs) if arrs else np.zeros(1, np.float32)), sr
     except ImportError:  # eski sürüm (1.2): synthesize(text, wav_file, length_scale=...)
@@ -549,9 +563,22 @@ def tts(text: str, style: str, voice_name: str) -> bytes:
     voice = _piper_voice(piper_name)
     # Perde (yalnızca küçük farklar için): sesi `pitch` kadar yavaş üretip örnekleme hızını `pitch` kadar artırınca süre
     # aynı kalır, perde yükselir. Büyük oranlar (eskiden ×1,24) sesi yapaylaştırdığı için artık en fazla ~%6.
-    x, sr = _synth(voice, text, p["length_scale"] * pitch)
-    x = x / (np.max(np.abs(x)) + 1e-6) * 0.9 * p["volume"]
-    return float_to_wav(x.astype(np.float32), int(round(sr * pitch)))
+    x, sr = _synth(voice, text, p["length_scale"] * pitch, p["noise"], p["noise_w"])
+    return float_to_wav(_set_loudness(x, p["rms_db"]), int(round(sr * pitch)))
+
+
+def _set_loudness(x: np.ndarray, rms_db: float) -> np.ndarray:
+    """Konuşmalı bölümlerin ses seviyesini hedefe getirir (eskiden tepe değere göre normalleştiriliyordu: her duygu
+    aynı yükseklikte çıkıyor, akustik analiz her turda 'yüksek ses' görüyordu). Tepe en fazla 0,98."""
+    x = x.astype(np.float32)
+    fr = 640
+    n = max(1, x.size // fr)
+    rms = np.sqrt(np.mean(x[: n * fr].reshape(n, fr) ** 2, axis=1) + 1e-12)
+    voiced = rms[rms >= np.percentile(rms, 40)]
+    cur = 20 * np.log10(np.mean(voiced) + 1e-9)
+    y = x * (10 ** ((rms_db - cur) / 20))
+    peak = np.max(np.abs(y)) + 1e-9
+    return (y * min(1.0, 0.98 / peak)).astype(np.float32)
 
 
 # ============================================================ ısınma

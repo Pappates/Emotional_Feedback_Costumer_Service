@@ -6,3 +6,4 @@ data/global_model.json
 data/raporlar/*
 !data/raporlar/.gitkeep
 data/ollama_ozel.log
+data/etiket/*

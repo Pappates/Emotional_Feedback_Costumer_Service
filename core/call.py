@@ -19,7 +19,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from . import config, emotion, llm
-from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES, TOOLS, mood_delivery, mood_label
+from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES, TOOLS, mood_delivery, mood_label, mood_speech
 from .learner import REWARD_CLIP, CallLearner, GlobalModel
 
 PROGRESS_WEIGHT = 0.15
@@ -190,6 +190,15 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
         out = out[:-1]
     t = " ".join(out)
     return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
+
+
+def _psych_hint(an: dict, end: str) -> str:
+    """Psikolojik durumu asistana kısaca söyler. Strateji seçimini bandit yapar; bu ipucu yalnızca seçilen strateji
+    içinde nasıl konuşacağını şekillendirir (öğrenmeyi bozmamak için seçimi değiştirmez)."""
+    ps = an.get("psikoloji")
+    if not ps or ps["gerekce"] == "belirgin değerlendirme yok":
+        return ""
+    return f" Psikolojik durum: {ps['kategori']} ({ps['gerekce']})." + (f" {ps['oneri']}" if ps.get("oneri") else "") + end
 
 
 def partial_json_string(buf: str, key: str) -> tuple[str, bool]:
@@ -419,7 +428,9 @@ class Call:
             if not self.history:   # ilk tur: küçük model karakter tanımını tekrar etmesin, gerçekten aradığını bilsin
                 yon = ("Çağrı merkezi telefonu açtı ve 'Merhaba, size nasıl yardımcı olabilirim?' dedi. "
                        "Kendi adını kullanarak (ya da hiç ad vermeden) sorununu anlat.")
-            prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {yon} {gorev} "
+            prompt = (f"[YÖNERGE] Ruh halin: {mood_label(self.mood)}. {mood_speech(self.mood)} "
+                      "Önceki cümlelerindeki öfkeyi değil, ŞU ANKİ ruh halini yansıt. "
+                      f"{yon} {gorev} "
                       f"Çözülmüş sorunların: {', '.join(ISSUES[i]['ad'] for i in self.resolved) or 'yok'}. "
                       "Müşteri olarak 1-2 kısa cümleyle cevap ver.")
             hist = self._chat_history("müşteri", window=LOCAL_HISTORY)
@@ -451,6 +462,18 @@ class Call:
             if must_raise and not bad:
                 from . import local
                 missing = local.text_cues(text)["konu"] != self.current_issue
+            # Söz ruh haliyle uyumlu mu? (sakinleşmiş müşteri hâlâ bağırıyorsa duygu analizi yanlış ölçülür)
+            clash = False
+            if self.mode == "lokal" and not (bad or repeat or missing):
+                from . import local
+                tv = local.text_sentiment(text)["valens"]
+                clash = (self.mood >= 0.15 and (tv < -0.35 or text.count("!") >= 2)) or (self.mood < -0.5 and tv > 0.35)
+                if clash and attempt == 0:
+                    print(f"[koruma] müşteri cevabı ruh haliyle uyumsuz (ruh hali {self.mood:+.2f}, metin {tv:+.2f}): "
+                          f"{text[:70]!r}", flush=True)
+                    prompt += (f" DİKKAT: Şu an {mood_label(self.mood)} durumdasın; sözlerin ve tonun buna uymalı. "
+                               f"{mood_speech(self.mood)}")
+                    continue
             if not (bad or repeat or missing):
                 return text
             if repeat:
@@ -733,6 +756,7 @@ class Call:
             f"Müşterinin son konuşmasının duygu analizi: duygu={an['duygu']}, valens={an['valens']:+.2f}, "
             f"gerginlik={an['uyarilma']:.2f}, churn riski={an['churn_riski']:.2f}. "
             f"Ses ipuçları: {an['ses_ipuclari']}. Söz ipuçları: {an['metin_ipuclari']}\n"
+            + _psych_hint(an, "\n")
             + (f"YÖNETMEN UYARISI: {director}\n" if director else "")
             + f"\nKullanabileceğin araçlar:\n{tools_txt}\n\n"
             f"Daha önce yapılan işlemler: {'; '.join(done) or 'yok'}\n\n"
@@ -751,6 +775,7 @@ class Call:
                               and re.match(r"\[(\w+)\]", h["metin"]).group(1) in TOOL_SPOKEN})
             prompt = (f"[YÖNERGE] Strateji: {STRATEGIES[s]['ad']} ({STRATEGIES[s]['talimat']}) Ton: {TONES[t]['ad']}. "
                       f"Müşteri: {an['duygu']}, ayrılma riski %{an['churn_riski'] * 100:.0f}."
+                      + _psych_hint(an, "")
                       + (f" UYARI: {director}" if director else "")
                       + f" Yapılanlar: {', '.join(yapilan) or 'yok'}." + tool_hint
                       + " En fazla 2 kısa cümleyle cevap ver; müşteriyi tekrarlama.")

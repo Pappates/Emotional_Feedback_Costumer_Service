@@ -83,6 +83,14 @@ def acoustic_features(wav_bytes: bytes, transcript: str = "") -> dict:
     return feats
 
 
+def _with_psych(out: dict) -> dict:
+    """Psikolojik katman (baskınlık + değerlendirme boyutları + çağrı merkezi kategorisi), bkz. core/psych.py."""
+    from . import psych
+    out["psikoloji"] = psych.assess(out.get("transkript", ""), float(out["valens"]), float(out["uyarilma"]),
+                                    out.get("akustik"))
+    return out
+
+
 def analyze_audio(wav_bytes: bytes) -> dict:
     if llm.config.PROVIDER == "lokal":
         from . import local
@@ -92,7 +100,7 @@ def analyze_audio(wav_bytes: bytes) -> dict:
         out["akustik"] = feats
         out["uyarilma_gemini"] = None      # lokal modda Gemini kanalı yok; füzyon local.analyze içinde
         out["kaynak"] = "lokal: ses + metin"
-        return out
+        return _with_psych(out)
     r: GeminiEmotion = llm.generate_json(
         SYSTEM, "Bu ses kaydındaki müşteriyi analiz et.", GeminiEmotion, audio_wav=wav_bytes, temperature=0.2
     )
@@ -104,7 +112,7 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     if feats.get("akustik_uyarilma") is not None:
         out["uyarilma"] = round(0.6 * out["uyarilma"] + 0.4 * feats["akustik_uyarilma"], 3)
     out["kaynak"] = "ses + metin"
-    return out
+    return _with_psych(out)
 
 
 def analyze_text(text: str) -> dict:
@@ -113,7 +121,7 @@ def analyze_text(text: str) -> dict:
         out = local.analyze(text, None, None)
         out["akustik"] = {}
         out["kaynak"] = "lokal: yalnızca metin"
-        return out
+        return _with_psych(out)
     r: GeminiEmotion = llm.generate_json(
         SYSTEM, f"Müşterinin söyledikleri (yalnızca metin, ses yok):\n\"{text}\"", GeminiEmotion, temperature=0.2
     )
@@ -121,7 +129,7 @@ def analyze_text(text: str) -> dict:
     out["transkript"] = text
     out["akustik"] = {}
     out["kaynak"] = "yalnızca metin"
-    return out
+    return _with_psych(out)
 
 
 def mock_analysis(true_mood: float, text: str, issue: str, rng: np.random.Generator) -> dict:
@@ -138,9 +146,9 @@ def mock_analysis(true_mood: float, text: str, issue: str, rng: np.random.Genera
         emo = "rahatlama"
     else:
         emo = "memnuniyet"
-    return {
+    return _with_psych({
         "transkript": text, "duygu": emo, "valens": round(v, 3), "uyarilma": round(ar, 3),
         "churn_riski": round(float(1 / (1 + np.exp(4 * (v + 0.35)))), 3), "konu": issue,
         "ses_ipuclari": "(demo modu: ses analizi simüle edildi)", "metin_ipuclari": "",
         "akustik": {}, "kaynak": "demo (simülasyon)",
-    }
+    })

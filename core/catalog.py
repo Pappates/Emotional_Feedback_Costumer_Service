@@ -164,6 +164,20 @@ def mood_delivery(mood: float) -> str:
     return "Say in a happy, warm and grateful voice"
 
 
+def mood_speech(mood: float) -> str:
+    """Ruh haline uygun konuşma tarzı (küçük model geçmişteki öfkeli cümlelerini taklit etmesin diye somut tarif)."""
+    if mood < -0.6:
+        return "Kısa, kesik cümleler kur; sitem et, ünlem kullanabilirsin."
+    if mood < -0.25:
+        return "Sabırsız ve gerginsin ama bağırmıyorsun; yakınarak, net taleplerle konuş."
+    if mood < 0.15:
+        return "Öfken geçti, temkinlisin: sakin konuş, ünlem kullanma; şüpheni soru sorarak belli et."
+    if mood < 0.5:
+        return ("Rahatladın: yumuşak ve sakin konuş, ünlem kullanma, bağırma; 'tamam', 'peki', 'iyi' gibi ifadeler "
+                "kullan. Bir derdin kaldıysa bile sakin bir dille söyle.")
+    return "Memnunsun: teşekkür et, sıcak ve olumlu konuş."
+
+
 def mood_label(mood: float) -> str:
     if mood < -0.6:
         return "çok öfkeli"

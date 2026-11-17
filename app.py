@@ -230,6 +230,59 @@ def reset():
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ test seti: kayıt + etiketleme (Aşama 1, A2)
+from fastapi import Request  # noqa: E402
+from core import etiket  # noqa: E402
+
+
+@app.get("/etiket")
+def etiket_page():
+    return FileResponse(config.ROOT / "static" / "etiket.html")
+
+
+@app.get("/api/etiket/kartlar")
+def etiket_kartlar():
+    return {"kartlar": [{"id": k, "kategori": c, "durum": d, "cumle": t} for k, c, d, t in etiket.KARTLAR],
+            "kategoriler": etiket.KATEGORILER, "suc": etiket.SUC}
+
+
+@app.post("/api/etiket/kayit")
+async def etiket_kayit(request: Request, konusmaci: str = "", kart: str = "", hedef: str = "", not_: str = ""):
+    wav = await request.body()
+    if len(wav) < 1000 or wav[:4] != b"RIFF":
+        raise HTTPException(400, "WAV bekleniyor")
+    return etiket.save_recording(wav, konusmaci, kart or None, hedef or None, not_)
+
+
+@app.get("/api/etiket/kayitlar")
+def etiket_kayitlar():
+    return {"kayitlar": etiket.recordings()}
+
+
+@app.post("/api/etiket/puan")
+async def etiket_puan(request: Request):
+    return etiket.save_rating(await request.json())
+
+
+@app.get("/api/etiket/ozet")
+def etiket_ozet():
+    return etiket.summary()
+
+
+@app.get("/api/etiket/csv")
+def etiket_csv():
+    return Response(etiket.to_csv(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="etiketler.csv"'})
+
+
+@app.post("/api/etiket/degerlendir")
+def etiket_degerlendir():
+    with LOCK:
+        return etiket.evaluate()
+
+
+etiket.AUDIO.mkdir(parents=True, exist_ok=True)
+app.mount("/etiket-ses", StaticFiles(directory=etiket.AUDIO), name="etiket-ses")
 app.mount("/static", StaticFiles(directory=config.ROOT / "static"), name="static")
 app.mount("/audio", StaticFiles(directory=config.AUDIO_DIR), name="audio")
 

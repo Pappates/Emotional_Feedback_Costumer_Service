@@ -141,6 +141,8 @@ CSV_COLS = [
     "odul_icin_strateji", "odul_icin_ton", "onceki_valens", "yeni_valens", "duygu_degisimi", "ilerleme_bonusu",
     "ham_odul", "ogrenmeye_giren_odul", "yonetmen_uyarisi", "secilen_strateji", "secilen_ton", "strateji_gerekcesi",
     "ton_gerekcesi", "asistan_cevabi", "asistan_ic_sesi", "araclar",
+    "psikolojik_kategori", "baskinlik", "suc_yukleme", "belirsizlik", "kontrol_kaybi", "haksizlik", "talep",
+    "vazgecmislik", "psikolojik_oneri_strateji",
 ]
 
 
@@ -166,6 +168,8 @@ def to_csv(rep: dict) -> str:
             o.get("ilerleme_bonusu"), o.get("ham_odul"), o.get("ogrenmeye_giren"), a.get("yonetmen"),
             s.get("strateji"), s.get("ton"), (s.get("neden") or {}).get("strateji"), (s.get("neden") or {}).get("ton"),
             a.get("cevap"), a.get("ic_ses"), " | ".join(f"{x['arac']}: {x['sonuc']}" for x in a.get("araclar") or []),
+            *[(an.get("psikoloji") or {}).get(k) for k in ("kategori", "baskinlik", "suc_yukleme", "belirsizlik",
+              "kontrol_kaybi", "haksizlik", "talep", "vazgecmislik", "oneri_strateji")],
         ]])
     return "﻿" + buf.getvalue()   # BOM: Excel Türkçe karakterleri doğru açsın
 
@@ -237,6 +241,12 @@ perde dalgalanması (std/ort) ve konuşma hızı (kelime / sesli süre) ölçül
 <code>0,4·enerji + 0,3·hız + 0,3·perde dalgalanması</code> (her biri 0–1'e ölçeklenir).</li>
 <li><b>Füzyon.</b> Valens Gemini'den alınır (söz + ton birlikte değerlendirildiği için). Uyarılmışlık iki kanalın ağırlıklı ortalamasıdır:
 <code>uyarılma = 0,6·Gemini + 0,4·akustik</code>.</li>
+<li><b>Psikolojik katman.</b> Valens ve uyarılmaya PAD modelinin üçüncü boyutu <b>baskınlık</b> (talepkâr ↔ çaresiz) eklenir.
+Değerlendirme kuramına (Scherer, Lazarus) göre müşterinin durumu nasıl yorumladığı ölçülür: <b>suç yükleme</b> (kurum/durum/kendisi),
+<b>belirsizlik</b>, <b>kontrol kaybı</b>, <b>haksızlık algısı</b>, <b>vazgeçmişlik</b>. Bunlardan çağrı merkezi kategorisi türetilir
+(öfke, hayal kırıklığı, kaygı, kafa karışıklığı, <b>küskünlük</b> = sessiz churn riski, rahatlama, memnuniyet) ve en baskın
+değerlendirmeye uygun yaklaşım önerilir. Strateji seçimini yine öğrenen asistan yapar; öneri yalnızca konuşma biçimini şekillendirir
+ve raporda seçimle karşılaştırılır. Aşama 1'de Türkçe sözcük kalıplarıyla çalışır.</li>
 <li><b>Ödül.</b> Asistanın bir önceki hamlesi (strateji + ton) şöyle puanlanır:
 <code>ödül = (yeni valens − önceki valens) + 0,15 × (o hamlede çözülen sorun sayısı)</code>.
 Tek bir gürültülü ölçümün öğrenmeyi ele geçirmemesi için ödül öğrenmeye <code>[−0,5, +0,5]</code> aralığına kırpılarak girer.</li>
@@ -264,6 +274,12 @@ perde dalgalanması ve konuşma hızı ölçülür; <code>0,4·enerji + 0,3·hı
 <li><b>Füzyon.</b> <code>valens = 0,9·metin + 0,1·ses modeli</code>, <code>uyarılma = 0,5·ses modeli + 0,5·akustik</code>,
 <code>churn = sigmoid(−3·(valens + 0,2))</code>; "iptal", "başka operatöre geçeceğim" gibi açık ayrılma ifadesi varsa en az 0,85.
 Konu ve ayrılma niyeti Türkçe anahtar kelime kurallarıyla bulunur.</li>
+<li><b>Psikolojik katman.</b> Valens ve uyarılmaya PAD modelinin üçüncü boyutu <b>baskınlık</b> (talepkâr ↔ çaresiz) eklenir.
+Değerlendirme kuramına (Scherer, Lazarus) göre müşterinin durumu nasıl yorumladığı ölçülür: <b>suç yükleme</b> (kurum/durum/kendisi),
+<b>belirsizlik</b>, <b>kontrol kaybı</b>, <b>haksızlık algısı</b>, <b>vazgeçmişlik</b>. Bunlardan çağrı merkezi kategorisi türetilir
+(öfke, hayal kırıklığı, kaygı, kafa karışıklığı, <b>küskünlük</b> = sessiz churn riski, rahatlama, memnuniyet) ve en baskın
+değerlendirmeye uygun yaklaşım önerilir. Strateji seçimini yine öğrenen asistan yapar; öneri yalnızca konuşma biçimini şekillendirir
+ve raporda seçimle karşılaştırılır. Aşama 1'de Türkçe sözcük kalıplarıyla çalışır.</li>
 <li><b>Ödül.</b> Asistanın bir önceki hamlesi (strateji + ton) şöyle puanlanır:
 <code>ödül = (yeni valens − önceki valens) + 0,15 × (o hamlede çözülen sorun sayısı)</code>.
 Tek bir gürültülü ölçümün öğrenmeyi ele geçirmemesi için ödül öğrenmeye <code>[−0,5, +0,5]</code> aralığına kırpılarak girer.</li>
@@ -376,6 +392,23 @@ def to_html(rep: dict) -> str:
                     f'<div><h4>Akustik özellikler</h4>'
                     + (f'<table class="mini"><tbody>{ac}</tbody></table>' if ac else '<p class="note">Bu turda ses kaydı yok (metin analizi).</p>')
                     + '</div></div>')
+            ps = an.get("psikoloji")
+            if ps:
+                sec0 = a.get("secim") or {}
+                uyum = ""
+                if ps.get("oneri_strateji") and sec0.get("strateji"):
+                    ok = ps["oneri_strateji"] == sec0["strateji"]
+                    uyum = (f' · asistanın seçimi ({E(names[sec0["strateji"]])}) '
+                            + ('<span class="ok">öneriyle aynı</span>' if ok else '<span class="bad">öneriden farklı</span>'))
+                perc += (f'<h4>Psikolojik değerlendirme: <b>{E(ps["kategori"])}</b></h4><table class="mini"><tbody>'
+                         f'<tr><td>Baskınlık (−1 çaresiz … +1 talepkâr)</td><td class="num">{_f(ps["baskinlik"])}</td></tr>'
+                         f'<tr><td>Suç yükleme</td><td class="num">{E(ps["suc_yukleme"])}</td></tr>'
+                         f'<tr><td>Belirsizlik</td><td class="num">{ps["belirsizlik"]:.2f}</td></tr>'
+                         f'<tr><td>Kontrol kaybı</td><td class="num">{ps["kontrol_kaybi"]:.2f}</td></tr>'
+                         f'<tr><td>Haksızlık algısı</td><td class="num">{ps["haksizlik"]:.2f}</td></tr>'
+                         f'<tr><td>Vazgeçmişlik</td><td class="num">{ps["vazgecmislik"]:.2f}</td></tr></tbody></table>'
+                         f'<p class="cue"><b>Gerekçe:</b> {E(ps["gerekce"])}'
+                         + (f' · <b>Öneri:</b> {E(ps["oneri"])}{uyum}' if ps.get("oneri") else "") + '</p>')
             o = a.get("odul")
             rew = ""
             if o:

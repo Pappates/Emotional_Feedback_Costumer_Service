@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Seti Etiketleme</title>
+<style>
+:root{color-scheme:light;--bg:#f4f3f0;--surface:#fcfcfb;--surface-2:#efeeea;--border:#dedcd6;--text:#0b0b0b;--text-2:#52514e;
+--muted:#8a8984;--s1:#2a78d6;--neg:#e34948;--good:#1a8f63;--warn:#b07800}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#121211;--surface:#1a1a19;--surface-2:#242422;
+--border:#33332f;--text:#f0efec;--text-2:#c3c2b7;--muted:#8d8c84;--s1:#3987e5;--neg:#e66767;--good:#2bb07f;--warn:#d9a000}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#121211;--surface:#1a1a19;--surface-2:#242422;--border:#33332f;--text:#f0efec;
+--text-2:#c3c2b7;--muted:#8d8c84;--s1:#3987e5;--neg:#e66767;--good:#2bb07f;--warn:#d9a000}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:18px 16px 60px}h1{font-size:22px;margin:4px 0}h2{font-size:15px;margin:0 0 10px}
+a{color:var(--s1)}.sub,.note{color:var(--text-2)}.note{font-size:12.5px}
+.tabs{display:flex;gap:6px;margin:14px 0;flex-wrap:wrap}.tabs button{background:var(--surface);border:1px solid var(--border);color:var(--text);
+padding:7px 14px;border-radius:99px;cursor:pointer;font:inherit}.tabs button.on{background:var(--s1);border-color:var(--s1);color:#fff}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0}
+input,select,textarea{font:inherit;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px}
+button.act{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--s1);background:var(--s1);color:#fff;cursor:pointer}
+button.act:disabled{opacity:.5;cursor:default}button.ghost{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid var(--border);
+background:var(--surface);color:var(--text);cursor:pointer}
+.kart{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:8px 0;cursor:pointer}.kart.sel{border-color:var(--s1);box-shadow:0 0 0 2px var(--s1) inset}
+.kart b{font-size:13px}.kart .c{font-size:12px;color:var(--text-2)}.kart .t{margin-top:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+.sam{margin:10px 0}.sam .lab{display:flex;justify-content:space-between;font-size:12px;color:var(--text-2)}
+.sam .opts{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:4px}
+.sam .opts label{text-align:center;border:1px solid var(--border);border-radius:6px;padding:5px 0;cursor:pointer;font-variant-numeric:tabular-nums}
+.sam .opts input{display:none}.sam .opts input:checked+span{font-weight:700;color:var(--s1)}
+.sam .opts label:has(input:checked){border-color:var(--s1);background:var(--surface-2)}
+.small5{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}.small5 label{text-align:center;border:1px solid var(--border);border-radius:6px;padding:4px 0;cursor:pointer}
+.small5 input{display:none}.small5 label:has(input:checked){border-color:var(--s1);background:var(--surface-2);font-weight:700}
+table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{padding:5px 8px;border-bottom:1px solid var(--border);text-align:left}
+td.num{text-align:right;font-variant-numeric:tabular-nums}.tw{overflow-x:auto}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.kpi .l{font-size:12px;color:var(--text-2)}.kpi .v{font-size:18px;font-weight:650;font-variant-numeric:tabular-nums}
+.ok{color:var(--good)}.bad{color:var(--neg)}.rec{color:var(--neg);font-weight:600}
+.meter{height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;flex:1;min-width:120px}.meter i{display:block;height:100%;background:var(--s1);width:0}
+</style>
+</head>
+<body><main>
+<p class="note"><a href="/">← Panel</a></p>
+<h1>Gerçek ses test seti</h1>
+<p class="sub">Modelleri ölçmek için gerçek insan sesi: senaryoları canlandırıp kaydedin, sonra en az 3 kişi her kaydı etiketlesin.
+Kayıtlar yalnızca bu bilgisayarda (<code>data/etiket</code>) tutulur, GitHub'a gönderilmez.</p>
+<div class="tabs"><button data-t="kaydet" class="on">1 · Kaydet</button><button data-t="etiketle">2 · Etiketle</button><button data-t="ozet">3 · Uyum ve ölçüm</button></div>
+
+<section id="kaydet">
+  <div class="card">
+    <div class="row"><label>Konuşmacı adı (kısaltma da olur) <input id="spk" size="14"></label>
+      <span class="note">Her konuşmacı tüm kartları okursa model konuşmacıdan bağımsız ölçülebilir.</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h2>Senaryo kartı seç</h2><p class="note">Cümleyi kendi sözlerinizle söyleyebilirsiniz; önemli olan tarif edilen ruh hali.
+      Telefonda konuşur gibi, abartmadan.</p><div id="kartlar"></div></div>
+    <div class="card" style="align-self:start;position:sticky;top:10px"><h2>Kayıt</h2>
+      <div id="secili" class="note">Soldan bir kart seçin ya da serbest kayıt yapın.</div>
+      <div class="row" style="margin-top:10px"><button class="act" id="recBtn">● Kaydı başlat</button>
+        <div class="meter"><i id="lvl"></i></div><span id="recT" class="note"></span></div>
+      <div id="preview"></div>
+      <div class="row"><button class="act" id="saveBtn" disabled>Kaydet</button><button class="ghost" id="nextBtn">Sonraki kart →</button></div>
+      <p class="note">Ya da hazır WAV dosyası yükleyin: <input type="file" id="upl" accept=".wav,audio/wav" multiple></p>
+      <p id="recMsg" class="note"></p>
+    </div>
+  </div>
+</section>
+
+<section id="etiketle" hidden>
+  <div class="card"><div class="row"><label>Etiketleyici adı <input id="rater" size="14"></label>
+    <span class="note">Kayıtları canlandırılan duyguyu bilmeden, yalnızca duyduğunuza göre puanlayın.</span>
+    <span id="todo" class="note"></span></div></div>
+  <div class="card" id="rateBox"></div>
+</section>
+
+<section id="ozet" hidden>
+  <div class="kpis" id="kpis"></div>
+  <div class="card" style="margin-top:14px"><h2>Mevcut modeli bu sette ölç</h2>
+    <p class="note">Lokal analiz hattı (Whisper + metin modeli + ses modeli + psikolojik katman) her etiketli kayıtta çalıştırılır;
+      insan puanlarının ortalamasıyla CCC (uyum korelasyonu) ve kategori UAR hesaplanır. Aşama 2'deki her model aynı ölçümle karşılaştırılır.</p>
+    <div class="row"><button class="act" id="evalBtn">Değerlendir</button><a href="/api/etiket/csv">Etiketleri CSV indir</a></div>
+    <div id="evalOut"></div></div>
+  <div class="card"><h2>Kayıtlar</h2><div class="tw" id="items"></div></div>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const E = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store = (k, v) => { try{ v === undefined ? null : localStorage.setItem(k, v); return localStorage.getItem(k) || ''; }catch(e){ return v || ''; } };
+let INFO = null, CARD = null, WAV = null;
+
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  ['kaydet','etiketle','ozet'].forEach(t => $(t).hidden = t !== b.dataset.t);
+  if(b.dataset.t === 'etiketle') loadRate(); if(b.dataset.t === 'ozet') loadSummary();
+});
+$('spk').value = store('spk'); $('spk').onchange = () => store('spk', $('spk').value);
+$('rater').value = store('rater');
+let RATER_SHOWN = null;   // aynı ad için formu yeniden çizme (kutudan çıkınca tetiklenen change ilk puanı siliyordu)
+$('rater').onchange = () => { store('rater', $('rater').value); if($('rater').value.trim() !== RATER_SHOWN) loadRate(); };
+
+// ---------------------------------------------------------------- kartlar
+async function init(){
+  INFO = await (await fetch('/api/etiket/kartlar')).json();
+  $('kartlar').innerHTML = INFO.kartlar.map(k => `<div class="kart" data-id="${k.id}"><b>${k.id} · ${E(k.kategori)}</b>
+    <span class="c"> · ${E(k.durum)}</span><div class="t">“${E(k.cumle)}”</div></div>`).join('');
+  document.querySelectorAll('.kart').forEach(el => el.onclick = () => pick(el.dataset.id));
+}
+function pick(id){
+  CARD = INFO.kartlar.find(k => k.id === id);
+  document.querySelectorAll('.kart').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+  $('secili').innerHTML = `<b>${CARD.id} · ${E(CARD.kategori)}</b> (${E(CARD.durum)})<br>“${E(CARD.cumle)}”`;
+}
+$('nextBtn').onclick = () => { const i = CARD ? INFO.kartlar.indexOf(CARD) : -1; pick(INFO.kartlar[(i + 1) % INFO.kartlar.length].id); };
+
+// ---------------------------------------------------------------- kayıt (tarayıcıda 16 kHz WAV)
+let rec = null;
+function encodeWav(chunks, sr){
+  const n = chunks.reduce((a, c) => a + c.length, 0), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0,'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true);
+  v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+  w(36,'data'); v.setUint32(40, n * 2, true);
+  let o = 44; for(const c of chunks) for(let i = 0; i < c.length; i++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, c[i])) * 32767, true);
+  return new Blob([buf], {type: 'audio/wav'});
+}
+$('recBtn').onclick = async () => {
+  if(rec){ stopRec(); return; }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true, noiseSuppression: false}});
+    const ctx = new AudioContext({sampleRate: 16000}), src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
+    const chunks = [], t0 = Date.now();
+    proc.onaudioprocess = e => { const d = e.inputBuffer.getChannelData(0); chunks.push(new Float32Array(d));
+      let m = 0; for(const x of d) m = Math.max(m, Math.abs(x)); $('lvl').style.width = Math.min(100, m * 140) + '%';
+      $('recT').textContent = ((Date.now() - t0) / 1000).toFixed(1) + ' sn'; if(Date.now() - t0 > 20000) stopRec(); };
+    src.connect(proc); proc.connect(ctx.destination);
+    rec = {stream, ctx, proc, chunks}; $('recBtn').textContent = '■ Durdur'; $('recBtn').classList.add('rec'); $('recMsg').textContent = '';
+  }catch(e){ $('recMsg').innerHTML = '<span class="bad">Mikrofon açılamadı: ' + E(e.message) + '</span> (tarayıcı izin vermeli; adres localhost olmalı)'; }
+};
+function stopRec(){
+  const r = rec; rec = null; r.proc.disconnect(); r.stream.getTracks().forEach(t => t.stop()); r.ctx.close();
+  WAV = encodeWav(r.chunks, 16000); $('recBtn').textContent = '● Kaydı başlat'; $('lvl').style.width = '0';
+  $('preview').innerHTML = `<audio controls src="${URL.createObjectURL(WAV)}" style="width:100%;margin-top:8px"></audio>`;
+  $('saveBtn').disabled = false;
+}
+async function upload(blob, card){
+  const q = new URLSearchParams({konusmaci: $('spk').value || 'anonim', kart: card ? card.id : '', hedef: card ? card.kategori : ''});
+  const r = await fetch('/api/etiket/kayit?' + q, {method: 'POST', body: blob, headers: {'Content-Type': 'audio/wav'}});
+  if(!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+$('saveBtn').onclick = async () => {
+  if(!$('spk').value){ $('recMsg').innerHTML = '<span class="bad">Önce konuşmacı adını yazın.</span>'; return; }
+  try{ const r = await upload(WAV, CARD); $('recMsg').innerHTML = `<span class="ok">Kaydedildi (${r.id}).</span>`;
+    $('saveBtn').disabled = true; WAV = null; $('preview').innerHTML = ''; $('nextBtn').click(); }
+  catch(e){ $('recMsg').innerHTML = '<span class="bad">' + E(e.message) + '</span>'; }
+};
+$('upl').onchange = async e => {
+  let ok = 0; for(const f of e.target.files){ try{ await upload(f, null); ok++; }catch(err){ $('recMsg').innerHTML = '<span class="bad">' + E(f.name + ': ' + err.message) + '</span>'; } }
+  if(ok) $('recMsg').innerHTML = `<span class="ok">${ok} dosya yüklendi (kart bilgisi olmadan).</span>`; e.target.value = '';
+};
+
+// ---------------------------------------------------------------- etiketleme
+function sam(name, lo, hi, title){
+  return `<div class="sam"><b>${title}</b><div class="lab"><span>1 · ${lo}</span><span>5 · orta</span><span>9 · ${hi}</span></div>
+    <div class="opts">${[1,2,3,4,5,6,7,8,9].map(i => `<label><input type="radio" name="${name}" value="${i}"><span>${i}</span></label>`).join('')}</div></div>`;
+}
+function five(name, title, lo, hi, def = 1){
+  return `<div style="margin:8px 0"><b style="font-size:13px">${title}</b> <span class="note">(1 ${lo} … 5 ${hi})</span>
+    <div class="small5">${[1,2,3,4,5].map(i => `<label><input type="radio" name="${name}" value="${i}" ${i === def ? 'checked' : ''}>${i}</label>`).join('')}</div></div>`;
+}
+async function loadRate(){
+  const rater = $('rater').value.trim(); RATER_SHOWN = rater;
+  if(!rater){ $('rateBox').innerHTML = '<p class="note">Önce etiketleyici adınızı yazın.</p>'; return; }
+  const {kayitlar} = await (await fetch('/api/etiket/kayitlar')).json();
+  const todo = kayitlar.filter(k => !k.etiketleyiciler.includes(rater)).sort((a, b) => a.etiketleyici_sayisi - b.etiketleyici_sayisi);
+  $('todo').textContent = `Sizi bekleyen: ${todo.length} / ${kayitlar.length}`;
+  if(!todo.length){ $('rateBox').innerHTML = '<p class="ok">Etiketlenecek kayıt kalmadı. Teşekkürler!</p>'; return; }
+  const k = todo[0];
+  $('rateBox').innerHTML = `<h2>Kayıt ${E(k.id)}</h2><audio controls autoplay src="${k.ses}" style="width:100%"></audio>
+    <div class="grid2"><div>
+      ${sam('valens', 'çok olumsuz', 'çok olumlu', 'Valens: ne kadar olumlu/olumsuz?')}
+      ${sam('uyarilma', 'sakin, durgun', 'çok gergin, heyecanlı', 'Uyarılma: ne kadar enerjik/gergin?')}
+      ${sam('baskinlik', 'çaresiz, edilgen', 'talepkâr, kontrol sahibi', 'Baskınlık: kendini ne kadar güçlü hissediyor?')}
+    </div><div>
+      <div style="margin:10px 0"><b>Kategori</b><br><select id="kat">${INFO.kategoriler.map(c => `<option>${c}</option>`).join('')}</select></div>
+      <div style="margin:10px 0"><b>Suçu kime yüklüyor?</b><br><select id="suc">${INFO.suc.map(c => `<option ${c === 'yok' ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      ${five('belirsizlik', 'Belirsizlik', 'yok', 'çok')}${five('kontrol_kaybi', 'Kontrol kaybı / çaresizlik', 'yok', 'çok')}
+      ${five('haksizlik', 'Haksızlık algısı', 'yok', 'çok')}${five('guven', 'Puanlarınıza güveniniz', 'düşük', 'yüksek', 3)}
+    </div></div>
+    <div class="row"><button class="act" id="rateSave">Kaydet ve sonraki</button><button class="ghost" id="rateSkip">Atla</button><span id="rateMsg" class="note"></span></div>`;
+  $('rateSkip').onclick = () => { todo.push(todo.shift()); loadRate(); };
+  $('rateSave').onclick = async () => {
+    const v = n => { const x = document.querySelector(`input[name="${n}"]:checked`); return x ? +x.value : null; };
+    const body = {kayit: k.id, etiketleyici: rater, valens: v('valens'), uyarilma: v('uyarilma'), baskinlik: v('baskinlik'),
+      kategori: $('kat').value, suc: $('suc').value, belirsizlik: v('belirsizlik'), kontrol_kaybi: v('kontrol_kaybi'),
+      haksizlik: v('haksizlik'), guven: v('guven')};
+    if(!body.valens || !body.uyarilma || !body.baskinlik){ $('rateMsg').innerHTML = '<span class="bad">Üç ölçeği de işaretleyin.</span>'; return; }
+    await fetch('/api/etiket/puan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    loadRate();
+  };
+}
+
+// ---------------------------------------------------------------- özet ve ölçüm
+const fa = x => x == null ? '–' : x.toFixed(2);
+async function loadSummary(){
+  const s = await (await fetch('/api/etiket/ozet')).json();
+  const al = x => x == null ? '–' : `<span class="${x >= 0.667 ? 'ok' : x >= 0.4 ? '' : 'bad'}">${x.toFixed(2)}</span>`;
+  $('kpis').innerHTML = [
+    ['Kayıt', s.kayit_sayisi, `${s.konusmacilar.length} konuşmacı`], ['≥3 etiketli', s.en_az_3_etiketli, `${s.etiketleyiciler.length} etiketleyici`],
+    ['Uyum · valens', al(s.alfa.valens), 'Krippendorff α'], ['Uyum · uyarılma', al(s.alfa.uyarilma), 'Krippendorff α'],
+    ['Uyum · baskınlık', al(s.alfa.baskinlik), 'Krippendorff α'], ['Uyum · kategori', al(s.alfa.kategori), 'α (nominal)'],
+    ['Canlandırma ↔ algı', s.hedefle_uyum == null ? '–' : '%' + Math.round(s.hedefle_uyum * 100), 'kart kategorisi = çoğunluk etiketi'],
+  ].map(([l, v, h]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="note">${h}</div></div>`).join('');
+  $('items').innerHTML = s.kayitlar.length ? `<table><thead><tr><th>Kayıt</th><th>Konuşmacı</th><th>n</th><th>Valens</th><th>Uyarılma</th>
+    <th>Baskınlık</th><th>Kategori (çoğunluk)</th><th>Kart</th></tr></thead><tbody>${s.kayitlar.map(i => `<tr><td><a href="/etiket-ses/${i.kayit}.wav">${i.kayit}</a></td>
+    <td>${E(i.konusmaci)}</td><td class="num">${i.n}</td><td class="num">${i.valens}</td><td class="num">${i.uyarilma}</td><td class="num">${i.baskinlik}</td>
+    <td>${E(i.kategori)}</td><td>${E(i.hedef || '–')}</td></tr>`).join('')}</tbody></table>` : '<p class="note">Henüz etiketli kayıt yok.</p>';
+}
+$('evalBtn').onclick = async () => {
+  $('evalBtn').disabled = true; $('evalOut').innerHTML = '<p class="note">Çalışıyor (kayıt başına birkaç saniye)…</p>';
+  try{
+    const r = await (await fetch('/api/etiket/degerlendir', {method: 'POST'})).json();
+    $('evalOut').innerHTML = r.n ? `<div class="kpis" style="margin-top:10px">${[['CCC · valens', r.ccc_valens], ['CCC · uyarılma', r.ccc_uyarilma],
+      ['CCC · baskınlık', r.ccc_baskinlik], ['Kategori UAR', r.kategori_uar]].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div>
+      <div class="v">${fa(v)}</div></div>`).join('')}</div><p class="note">${r.n} kayıt (en az 2 etiketleyicili). CCC: 1 = insanlarla tam uyum, 0 = ilişki yok.</p>
+      <div class="tw"><table><thead><tr><th>Kayıt</th><th>Valens insan/model</th><th>Uyarılma insan/model</th><th>Baskınlık insan/model</th>
+      <th>Kategori insan/model</th><th>Whisper</th></tr></thead><tbody>${r.satirlar.map(x => `<tr><td>${x.kayit}</td>
+      <td class="num">${fa(x.valens_insan)} / ${fa(x.valens_model)}</td><td class="num">${fa(x.uyarilma_insan)} / ${fa(x.uyarilma_model)}</td>
+      <td class="num">${fa(x.baskinlik_insan)} / ${fa(x.baskinlik_model)}</td><td class="${x.kategori_insan === x.kategori_model ? 'ok' : ''}">${E(x.kategori_insan)} / ${E(x.kategori_model)}</td>
+      <td>${E(x.transkript)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">En az 2 kişinin etiketlediği kayıt yok.</p>';
+  }catch(e){ $('evalOut').innerHTML = '<p class="bad">' + E(e.message) + '</p>'; }
+  $('evalBtn').disabled = false;
+};
+init();
+</script>
+</body></html>
