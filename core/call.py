@@ -18,7 +18,7 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, Field
 
-from . import config, emotion, llm
+from . import config, emotion, llm, tr_check
 from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES, TOOLS, mood_delivery, mood_label, mood_speech
 from .learner import REWARD_CLIP, CallLearner, GlobalModel
 
@@ -129,14 +129,17 @@ COMPANY_FACTS = ("Arıza kaydı açılınca saha ekibi 4 saat içinde müdahale 
                  "arasıdır. Hat iyileştirmesi uzaktan yapılır ve hız 100 Mbps profiline ayarlanır. Fatura incelemesinde "
                  "hatalı 240 TL bir sonraki faturaya iade olarak yansır. Nakil talebinde yeni adreste hat 2 iş günü "
                  "içinde aktif olur. Telafi kampanyası 1 ay %30 indirim ve 50 GB ek internettir.")
-def promise_violations(text: str) -> list[str]:
-    """Şirket kurallarında olmayan süre/saat sözlerini bulur ('yarım saat içinde', 'yarın sabah', '10:00')."""
+def promise_violations(text: str, context: str = "") -> list[str]:
+    """Şirket kurallarında olmayan süre/saat sözlerini bulur ('yarım saat içinde', 'yarın sabah', '10:00').
+    context: önceki cümle(ler); "Saha ekibi yönlendiriyorum. 4 saat içinde gelirler." gibi konunun bir önceki cümlede
+    geçtiği durumlarda izinli süre doğru tanınsın (cümle cümle seslendirmede tek cümle denetleniyordu)."""
     t = ascii_tr(text)
+    tc = ascii_tr(context + " " + text)
     # İzinli süreler yalnızca kendi konusunda: 4 saat = arıza/saha ekibi, 2 iş günü = nakil (fatura için "2 iş günü" uydurma)
     allowed = set()
-    if re.search(r"ariza|saha|ekip|teknik|muhendis|kesinti", t):
+    if re.search(r"ariza|saha|ekip|ekib|teknik|muhendis|kesinti", tc):
         allowed |= {"4 saat", "dort saat"}
-    if re.search(r"nakil|nakl|tasin|adres", t):
+    if re.search(r"nakil|nakl|tasin|adres", tc):
         allowed |= {"2 is gunu", "iki is gunu"}
     found = [m.group(0) for m in re.finditer(
         r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\b", t)
@@ -190,6 +193,21 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
         out = out[:-1]
     t = " ".join(out)
     return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
+
+
+def drop_bad_turkish(text: str) -> tuple[str, list[str]]:
+    """Türkçede olmayan kelime biçimi içeren cümleleri çıkarır (başka cümle kalıyorsa). Döner: (metin, bozuk kelimeler)."""
+    sents = re.split(r"(?<=[.!?…])\s+", text.strip())
+    bad_all, keep = [], []
+    for x in sents:
+        b = tr_check.bad_words(x)
+        bad_all += b
+        if not b:
+            keep.append(x)
+    if bad_all and keep:
+        print(f"[koruma] bozuk Türkçe, cümle çıkarıldı: {bad_all}", flush=True)
+        return " ".join(keep), bad_all
+    return text, bad_all
 
 
 def _psych_hint(an: dict, end: str) -> str:
@@ -462,6 +480,14 @@ class Call:
             if must_raise and not bad:
                 from . import local
                 missing = local.text_cues(text)["konu"] != self.current_issue
+            typo = tr_check.bad_words(text) if self.mode == "lokal" and not (bad or repeat or missing) else []
+            if typo and attempt == 0:
+                print(f"[koruma] müşteri cevabında bozuk Türkçe {typo}: {text[:70]!r}", flush=True)
+                prompt += (f" DİKKAT: Şu kelimeler Türkçe değil ya da yanlış yazıldı: {', '.join(typo)}. "
+                           "Doğru, sade, günlük Türkçe kullan.")
+                continue
+            if typo:
+                text, _ = drop_bad_turkish(text)
             # Söz ruh haliyle uyumlu mu? (sakinleşmiş müşteri hâlâ bağırıyorsa duygu analizi yanlış ölçülür)
             clash = False
             if self.mode == "lokal" and not (bad or repeat or missing):
@@ -536,7 +562,7 @@ class Call:
         schema = LocalAgentStreamReply
         last_cust = next((h["metin"] for h in reversed(self.history) if h["rol"] == "müşteri"), "")
         from . import local
-        buf, emitted_upto, spoken, wavs, dropped = "", 0, [], [], []
+        buf, emitted_upto, spoken, wavs, dropped, dropped_typos = "", 0, [], [], [], []
 
         def accept(sentence: str):
             sentence = clean_utterance(sentence, max_sentences=1)
@@ -545,12 +571,17 @@ class Call:
             if len(sentence) < 2:
                 return None
             sentence = sentence[0].upper() + sentence[1:]
-            bad = promise_violations(sentence)
+            bad = promise_violations(sentence, " ".join(spoken[-1:]))
             if bad:                                    # kural dışı söz: bu cümle söylenmez
                 dropped.extend(bad)
                 print(f"[koruma] kural dışı söz, cümle atlandı: {bad}", flush=True)
                 return None
             if _similar(sentence, last_cust) > 0.55 or sentence in spoken:
+                return None
+            typo = tr_check.bad_words(sentence)
+            if typo:                                   # Türkçede olmayan kelime biçimi: bu cümle söylenmez
+                dropped_typos.extend(typo)
+                print(f"[koruma] bozuk Türkçe, cümle atlandı: {typo} {sentence[:60]!r}", flush=True)
                 return None
             return sentence
 
@@ -601,6 +632,7 @@ class Call:
         out = {"cevap": " ".join(spoken), "araclar": araclar, "ic_ses": "", "_raw": text}
         reply = self._agent_post(out, s, t, an)
         reply["kural_disi_soz"] = sorted(set(reply.get("kural_disi_soz", [])) | set(dropped))
+        reply["bozuk_turkce"] = sorted(set(reply.get("bozuk_turkce", [])) | set(dropped_typos))
         url = self._join_audio(wavs)                    # kayıt ve rapor için tek dosya
         yield {"tip": "son", **self._agent_apply(ctx, reply, url)}
 
@@ -722,6 +754,7 @@ class Call:
                       "neden": {"strateji": self.learner.explain("strateji", s), "ton": self.learner.explain("ton", t)}},
             "cevap": reply["cevap"], "ic_ses": reply["ic_ses"], "araclar": actions,
             "kural_disi_soz": reply.get("kural_disi_soz", []),
+            "bozuk_turkce": reply.get("bozuk_turkce", []),
         })
         ev["ses"] = url
         self.history.append({"rol": "asistan", "metin": reply["cevap"]})
@@ -840,6 +873,9 @@ class Call:
             keep = [x for x in sents if not promise_violations(x)]
             if keep:
                 out["cevap"] = " ".join(keep)
+        if self.mode == "lokal":
+            out["cevap"], typos = drop_bad_turkish(out["cevap"])
+            out["bozuk_turkce"] = sorted(set(out.get("bozuk_turkce", []) + typos))
         out["ic_ses"] = clean_utterance(out.get("ic_ses", ""), max_sentences=2)
         cues = f"{an.get('ses_ipuclari', '')} {an.get('metin_ipuclari', '')}".lower()
         if (len(out.get("ic_ses", "").split()) < 4 or _similar(out["ic_ses"], out["cevap"]) > 0.7

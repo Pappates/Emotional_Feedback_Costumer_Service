@@ -27,13 +27,13 @@ if [ ! -f ".env" ]; then
 fi
 
 if grep -qi '^SAGLAYICI=lokal' .env 2>/dev/null; then
-  if [ ! -f .venv/lokal-kurulu-v3.txt ]; then
+  if [ ! -f .venv/lokal-kurulu-v4.txt ]; then
     echo "Lokal model paketleri kuruluyor (torch, whisper, transformers, piper). İlk seferde 5-10 dakika sürebilir..."
     if [ "$(uname)" = "Linux" ]; then
       .venv/bin/python -m pip install -q torch --index-url https://download.pytorch.org/whl/cpu || true   # GPU'suz küçük torch
     fi
     .venv/bin/python -m pip install -q -r requirements-lokal.txt
-    echo ok > .venv/lokal-kurulu-v3.txt
+    echo ok > .venv/lokal-kurulu-v4.txt
   fi
   LLM=$(grep -i '^LOKAL_LLM=' .env | cut -d= -f2-); LLM=${LLM:-gemma3:4b}
   if command -v ollama >/dev/null; then

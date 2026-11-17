@@ -49,11 +49,11 @@ if defined KEY (> ".env" echo GEMINI_API_KEY=%KEY%) else (> ".env" echo # GEMINI
 exit /b 0
 
 :lokal
-if not exist ".venv\lokal-kurulu-v3.txt" (
+if not exist ".venv\lokal-kurulu-v4.txt" (
   echo.
   echo Lokal model paketleri kuruluyor ^(torch, whisper, transformers, piper^). Ilk seferde 5-10 dakika surebilir...
   ".venv\Scripts\python.exe" -m pip install -r requirements-lokal.txt -q || (echo [HATA] Lokal paketler kurulamadi. Internet/proxy ayarlarini kontrol edin. & pause & exit /b 1)
-  > ".venv\lokal-kurulu-v3.txt" echo ok
+  > ".venv\lokal-kurulu-v4.txt" echo ok
 )
 set "LLM=gemma3:4b"
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do if /i "%%a"=="LOKAL_LLM" set "LLM=%%b"

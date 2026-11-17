@@ -43,6 +43,9 @@ WHISPER_MODEL = os.getenv("LOKAL_WHISPER", "small")
 # Ses duygu modeli. Aşama 1 karşılaştırmasında (TurEV-DB, Türkçe, konuşmacı-dışarıda) emotion2vec+ base hazır hâliyle
 # 4 duyguda UAR 0,79, valens AUC 0,90, uyarılma AUC 0,95; eski superb modeli UAR 0,27, valens AUC 0,46 (şanstan kötü).
 # Eski modele dönmek için: LOKAL_SES_DUYGU=superb/wav2vec2-base-superb-er
+# Örnekleme ayarları (Türkçe kalite deneyiyle belirlendi, bkz. README "Türkçe kalitesi")
+REPEAT_PENALTY = float(os.getenv("LOKAL_TEKRAR_CEZASI", "1.15"))
+TEMP_SCALE = float(os.getenv("LOKAL_SICAKLIK_CARPANI", "1.0"))
 SER_MODEL = os.getenv("LOKAL_SES_DUYGU", "emotion2vec/emotion2vec_plus_base")
 SER_FALLBACK = "superb/wav2vec2-base-superb-er"
 TEXT_MODEL = os.getenv("LOKAL_METIN_DUYGU", "savasy/bert-base-turkish-sentiment-cased")
@@ -252,8 +255,8 @@ def chat_json(system: str, prompt: str, schema: type[BaseModel], temperature: fl
         "format": schema.model_json_schema(),      # Ollama yapılandırılmış çıktı: JSON şemasına uyar
         "stream": False,
         "keep_alive": "30m",
-        "options": {"temperature": temperature, "num_ctx": 4096, "top_p": 0.9,
-                    "repeat_penalty": 1.15, "num_predict": 260},
+        "options": {"temperature": round(temperature * TEMP_SCALE, 3), "num_ctx": 4096, "top_p": 0.9,
+                    "repeat_penalty": REPEAT_PENALTY, "num_predict": 260},
     }
     try:
         out = _ollama("/api/chat", payload)
@@ -280,8 +283,8 @@ def chat_stream(system: str, prompt: str, schema: type[BaseModel], temperature: 
         "format": schema.model_json_schema(),
         "stream": True,
         "keep_alive": "30m",
-        "options": {"temperature": temperature, "num_ctx": 4096, "top_p": 0.9,
-                    "repeat_penalty": 1.15, "num_predict": 260},
+        "options": {"temperature": round(temperature * TEMP_SCALE, 3), "num_ctx": 4096, "top_p": 0.9,
+                    "repeat_penalty": REPEAT_PENALTY, "num_predict": 260},
     }
     req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=json.dumps(payload).encode("utf-8"),
                                  headers={"Content-Type": "application/json"}, method="POST")
@@ -640,6 +643,7 @@ def warmup():
         for name, fn in (("whisper", lambda: transcribe(float_to_wav(np.zeros(16000, np.float32), 16000))),
                          ("metin_duygu", lambda: text_sentiment("merhaba")),
                          ("ses_duygu", lambda: speech_emotion(float_to_wav(np.zeros(16000, np.float32), 16000))),
+                         ("yazim_denetimi", lambda: __import__("core.tr_check", fromlist=["warmup"]).warmup()),
                          ("piper", lambda: [_piper_voice(v) for v in {AGENT_PIPER_VOICE, *[x[0] for x in CUSTOMER_PIPER_VOICES.values()]}]),
                          *([("chatterbox", lambda: _get("chatterbox", _load_chatterbox))] if TTS_ENGINE == "chatterbox" else [])):
             try:
