@@ -267,7 +267,31 @@ GitHub'a gönderilmez. Hedef: 5-8 konuşmacı × 24 kart ≈ 120-200 kayıt.
 lojistik regresyonla, **konuşmacı-dışarıda** doğrulamayla karşılaştırılır (katman seçimi test konuşmacısını görmez).
 `egitim/ser_model_secimi.ipynb` aynı karşılaştırmayı Colab GPU'sunda tüm adaylarla tekrarlar.
 
-Sonuçlar (CPU ölçümü sürüyor) bu bölüme eklenecek. Colab not defteri aynı karşılaştırmayı GPU ile ~15-25 dakikada yapar.
+**Sonuçlar** (TurEV-DB, 4 çekirdekli CPU; ham sonuç `egitim/sonuc_cpu_turev.json`). UAR şans düzeyi 0,25;
+uyarılma/valens ikili görevlerde 0,50. RTF: işlem süresi / ses süresi (CPU, aynı anda başka işler de çalışırken).
+
+| Omurga | 4 duygu UAR | ±konuşmacı | Uyarılma | Valens | RTF (CPU) | Hazır tahmini |
+|---|---|---|---|---|---|---|
+| **emotion2vec+ base** (~90M) | **0,773** | **±0,063** | **0,880** | **0,831** | 0,09 | UAR 0,79 |
+| emotion2vec+ large (~300M) | 0,708 | ±0,072 | 0,858 | 0,773 | 0,15 | UAR 0,72 |
+| whisper-base (30 sn dolgu) | 0,550 | ±0,130 | 0,813 | 0,609 | 0,95 | – |
+| whisper-small (4 sn pencere) | 0,528 | ±0,060 | 0,784 | 0,646 | 0,14 | – |
+| XLS-R 300M | 0,522 | ±0,113 | 0,784 | 0,651 | 0,25 | – |
+| whisper-base (4 sn pencere) | 0,509 | ±0,081 | 0,762 | 0,611 | 0,05 | – |
+| WavLM base+ | 0,475 | ±0,142 | 0,754 | 0,660 | 0,09 | – |
+| audeering (valens/uyarılma/baskınlık) | 0,470 | ±0,077 | 0,723 | 0,635 | 0,14 | uyarılma AUC 0,82, valens AUC 0,50 |
+| mHuBERT-147 | 0,440 | ±0,079 | 0,749 | 0,613 | 0,09 | – |
+| superb wav2vec2 (şu an kullanılan) | 0,436 | ±0,108 | 0,766 | 0,611 | 0,14 | **UAR 0,27** |
+| eGeMAPS (88 özellik) | 0,431 | ±0,103 | 0,755 | 0,528 | 0,03 | – |
+
+**Karar: ince ayar emotion2vec+ base ile yapılacak.** Hem en doğru hem konuşmacılar arası en tutarlı, CPU'da gerçek
+zamanın ~11 katı hızlı; large sürümden de iyi. Diğer bulgular:
+* Şu an kullanılan ses modeli Türkçede şans düzeyinde (0,27): rapordaki "ses modeli: hap" çıktısının nedeni.
+* Duyguya özel ön eğitim, genel konuşma modellerinden (WavLM, XLS-R, mHuBERT, Whisper) açık ara iyi; boyut değil ön eğitim belirleyici.
+* İngilizce eğitimli audeering modeli Türkçede uyarılmayı tanıyor (AUC 0,82) ama valensi hiç tanımıyor (0,50):
+  ses dilden bağımsız olarak uyarılmayı taşır, valens dile ve kültüre bağlıdır. Valens Türkçe veriyle öğretilmeli ve metinle birleştirilmeli.
+* Sınırlar: TurEV tek kelimelik, oyunculu kayıtlardan oluşuyor; gerçek konuşmada sayılar düşer. Asıl ölçüm `/etiket`
+  test setinde yapılacak. emotion2vec+ lisansı "FunASR model lisansı"dır; ticari kullanımdan önce hukuk kontrolü gerekir.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 
