@@ -284,6 +284,10 @@ uyarılma/valens ikili görevlerde 0,50. RTF: işlem süresi / ses süresi (CPU,
 | superb wav2vec2 (şu an kullanılan) | 0,436 | ±0,108 | 0,766 | 0,611 | 0,14 | **UAR 0,27** |
 | eGeMAPS (88 özellik) | 0,431 | ±0,103 | 0,755 | 0,528 | 0,03 | – |
 
+**Colab (T4 GPU) tekrarı** (`egitim/sonuc_colab_turev.json`): sonuçlar CPU ölçümüyle aynı çıktı (emotion2vec+ base 0,774,
+large 0,708; superb 0,464), yani karşılaştırma tekrarlanabilir. Yalnızca Colab'da ölçülebilen **whisper-small (30 sn dolgu)**:
+UAR 0,603, ±0,108, uyarılma 0,814, valens 0,683; genel konuşma modellerinin en iyisi ama emotion2vec+ base'in gerisinde.
+
 **Karar: ince ayar emotion2vec+ base ile yapılacak.** Hem en doğru hem konuşmacılar arası en tutarlı, CPU'da gerçek
 zamanın ~11 katı hızlı; large sürümden de iyi. Diğer bulgular:
 * Şu an kullanılan ses modeli Türkçede şans düzeyinde (0,27): rapordaki "ses modeli: hap" çıktısının nedeni.
