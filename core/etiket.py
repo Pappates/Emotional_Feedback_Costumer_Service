@@ -15,6 +15,8 @@ import time
 import uuid
 from pathlib import Path
 
+from collections import Counter
+
 import numpy as np
 
 from . import config
@@ -73,12 +75,14 @@ def _append(path: Path, row: dict):
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def save_recording(wav: bytes, konusmaci: str, kart: str | None, hedef: str | None, not_: str = "") -> dict:
+def save_recording(wav: bytes, konusmaci: str, kart: str | None, hedef: str | None, not_: str = "",
+                   extra: dict | None = None) -> dict:
+    """extra: dış kaynaklı kesitlerde kaynak bilgisi ve ön etiket (etiketleyiciye gösterilmez)."""
     _ensure()
     kid = uuid.uuid4().hex[:10]
     (AUDIO / f"{kid}.wav").write_bytes(wav)
     row = {"id": kid, "konusmaci": konusmaci.strip()[:40] or "anonim", "kart": kart, "hedef_kategori": hedef,
-           "not": not_[:200], "tarih": time.strftime("%Y-%m-%dT%H:%M:%S")}
+           "not": not_[:200], "tarih": time.strftime("%Y-%m-%dT%H:%M:%S"), **(extra or {})}
     _append(KAYIT, row)
     return row
 
@@ -158,9 +162,12 @@ def summary() -> dict:
                       "kategori": max(set(cats), key=cats.count), "hedef": rec[u].get("hedef_kategori"),
                       "konusmaci": rec[u]["konusmaci"]})
     hedef_uyum = [i["kategori"] == i["hedef"] for i in items if i["hedef"]]
+    on = [(i["kategori"], rec[i["kayit"]]["on_etiket"]["kategori"]) for i in items if rec[i["kayit"]].get("on_etiket")]
     return {"kayit_sayisi": len(rec), "etiketli_kayit": len(by), "en_az_3_etiketli": sum(1 for v in by.values() if len(v) >= 3),
             "etiketleyiciler": sorted({p["etiketleyici"] for p in rat}), "konusmacilar": sorted({r["konusmaci"] for r in rec.values()}),
-            "alfa": alpha, "hedefle_uyum": round(float(np.mean(hedef_uyum)), 3) if hedef_uyum else None, "kayitlar": items}
+            "alfa": alpha, "hedefle_uyum": round(float(np.mean(hedef_uyum)), 3) if hedef_uyum else None,
+            "on_etiket_uyumu": round(float(np.mean([a == b for a, b in on])), 3) if on else None,
+            "kaynaklar": dict(Counter(r.get("kaynak", "kayit") for r in rec.values())), "kayitlar": items}
 
 
 def to_csv() -> str:

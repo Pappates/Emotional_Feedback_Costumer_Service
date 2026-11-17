@@ -8,3 +8,4 @@ data/raporlar/*
 data/ollama_ozel.log
 data/etiket/*
 data/audio/*.wav
+data/yodas/

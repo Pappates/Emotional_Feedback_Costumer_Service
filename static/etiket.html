@@ -212,6 +212,8 @@ async function loadSummary(){
     ['Uyum · valens', al(s.alfa.valens), 'Krippendorff α'], ['Uyum · uyarılma', al(s.alfa.uyarilma), 'Krippendorff α'],
     ['Uyum · baskınlık', al(s.alfa.baskinlik), 'Krippendorff α'], ['Uyum · kategori', al(s.alfa.kategori), 'α (nominal)'],
     ['Canlandırma ↔ algı', s.hedefle_uyum == null ? '–' : '%' + Math.round(s.hedefle_uyum * 100), 'kart kategorisi = çoğunluk etiketi'],
+    ['Ön etiket ↔ insan', s.on_etiket_uyumu == null ? '–' : '%' + Math.round(s.on_etiket_uyumu * 100), 'YODAS kesitlerinde model ön etiketi'],
+    ['Kaynak', Object.entries(s.kaynaklar || {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || '–', 'kendi kaydı / YODAS2'],
   ].map(([l, v, h]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="note">${h}</div></div>`).join('');
   $('items').innerHTML = s.kayitlar.length ? `<table><thead><tr><th>Kayıt</th><th>Konuşmacı</th><th>n</th><th>Valens</th><th>Uyarılma</th>
     <th>Baskınlık</th><th>Kategori (çoğunluk)</th><th>Kart</th></tr></thead><tbody>${s.kayitlar.map(i => `<tr><td><a href="/etiket-ses/${i.kayit}.wav">${i.kayit}</a></td>
