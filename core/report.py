@@ -409,7 +409,7 @@ def to_html(rep: dict) -> str:
                     f'<tr><td>Uyarılma</td><td class="num">{an["uyarilma"]:.2f}</td></tr>'
                     f'<tr><td>Churn riski</td><td class="num">%{an["churn_riski"]*100:.0f}</td></tr>'
                     + (f'<tr><td>Öfke düzeyi</td><td class="num"><b>{an["ofke"]:.1f}</b> / 4 ({E(an["ofke_detay"]["ad"])}; ses '
-                       f'{"–" if an["ofke_detay"]["ses"] is None else format(an["ofke_detay"]["ses"], ".1f")}, metin {an["ofke_detay"]["metin"]:.1f}; '
+                       f'{"–" if an["ofke_detay"]["ses"] is None else "kızgın %" + format(25 * an["ofke_detay"]["ses"], ".0f")}, metin {an["ofke_detay"]["metin"]:.1f}; '
                        f'gerçek {psych.true_anger(float(mu["gercek_ruh_hali"])):.1f})</td></tr>' if an.get("ofke_detay") else "")
                     + f'<tr><td>Algılanan konu</td><td class="num">{E(ISSUES.get(an["konu"], {}).get("ad", "Diğer"))}</td></tr>{fusion}</tbody></table>'
                     + (f'<p class="cue"><b>Whisper\'ın duyduğu:</b> {E(an["transkript"])}</p>'

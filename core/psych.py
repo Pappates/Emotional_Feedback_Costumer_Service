@@ -134,8 +134,8 @@ def anger_score(an: dict) -> dict:
     """Müşterinin öfke düzeyi, 0 (sakin) … 4 (öfke patlaması), sürekli değer.
 
     Toplantı kararı: hedef "kızgın mı, ne kadar kızgın, hangi yöntem öfkeyi azaltıyor".
-    * Ses (emotion2vec+): "kızgın" olasılığı (+ tiksintinin yarısı), gerginlikle ölçeklenir. ElevenLabs testinde
-      kızgın/nötr ayrımını net yaptı (0'da nötr, 1–4'te ~%100 kızgın) ama dereceyi ayırmadı.
+    * Ses (emotion2vec+): "kızgın" olasılığı (+ tiksintinin yarısı) kapı olarak: kızgın/nötr ayrımını net yapıyor
+      (ElevenLabs testinde 0'da nötr, 1–4'te ~%100 kızgın) ama dereceyi ayırmıyor; ses kızgınsa düzey en az 1,5.
     * Metin: olumsuzluk + öfke ipuçları (talep, suçu kuruma yükleme, ünlem, ayrılma tehdidi); dereceyi ayıran kısım.
     Ses modeli yoksa (yalnızca metin, Gemini ya da demo modu) yalnızca metin kısmı kullanılır.
     """
@@ -155,12 +155,17 @@ def anger_score(an: dict) -> dict:
     text01 = max(0.0, min(1.0, max(0.4 * neg + 0.5 * cue, 0.75 * cue)))
     probs = (la.get("ses_modeli") or {}).get("olasiliklar") or {}
     audio01 = None
+    level = 4 * text01
     if probs and "angry" in probs:
-        p = probs.get("angry", 0.0) + 0.5 * probs.get("disgusted", 0.0)
-        audio01 = max(0.0, min(1.0, p * (0.6 + 0.4 * float(an.get("uyarilma", 0.5)))))
-    # Kanallardan biri öfke duyuyorsa öfke vardır: ses nötr dediğinde (ör. Piper sesi) metindeki öfke yarıya inmez
-    a01 = text01 if audio01 is None else max(text01, 0.6 * audio01 + 0.4 * text01)
-    level = round(4 * a01, 2)
+        # Ses KAPI olarak kullanılır: "kızgın mı?" sorusunu cevaplar, dereceyi değil. Kalibrasyon (ElevenLabs Adam,
+        # aynı cümle 5 düzeyde): sakin 0, huzursuz/bıkkın/kızgın/bağırıyor hepsi ~%100 kızgın; enerji, perde ve hız da
+        # düzeylerle sıralı artmadı. Eski birleştirme her kızgın sese ~3,2 veriyordu (huzursuz müşteri, gerçek 1,3-1,5).
+        # Ses kızgın derse en az "kızgın" (1,5) eşiği + metnin derecesinin yarısı; ses nötrse metin aynen kalır.
+        p = max(0.0, min(1.0, probs.get("angry", 0.0) + 0.5 * probs.get("disgusted", 0.0)))
+        audio01 = p
+        gated = max(level, 1.5 + 0.5 * level)
+        level = level + p * (gated - level)
+    level = round(min(4.0, level), 2)
     return {"duzey": level, "ad": OFKE_ADLARI[min(4, int(level + 0.5))], "kizgin": level >= 1.5,
             "ses": None if audio01 is None else round(4 * audio01, 2), "metin": round(4 * text01, 2)}
 

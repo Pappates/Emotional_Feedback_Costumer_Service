@@ -31,7 +31,7 @@ REWARD_MODE = os.getenv("ODUL", "ofke").strip().lower()
 ANGER_REWARD_SCALE = 0.25
 # Prompt enjeksiyonu: her müşteri dönüşünden sonra asistanın talimatına eklenen durum bloğu.
 # yok | ofke (düzey + eğilim) | neden (+ değerlendirme) | tam (+ önerilen yaklaşım). Deneyle karşılaştırılacak.
-INJECTION = os.getenv("ENJEKSIYON", "tam").strip().lower()
+INJECTION = os.getenv("ENJEKSIYON", "neden").strip().lower()
 RESOLVE_MOOD_BONUS = 0.15
 STAY_THRESHOLD = 0.3
 TOOL_NAMES = tuple(TOOLS)

@@ -139,7 +139,7 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_SICAKLIK_CARPANI` | `0.7` | Tüm sıcaklıkların çarpanı (düşük = daha tutarlı, daha az yaratıcı) |
 | `LOKAL_YAZIM_DENETIMI` | `1` | Türkçe yazım denetimi (zeyrek + wordfreq); `0` kapatır |
 | `ODUL` | `ofke` | Öğrenen beynin ödülü: `ofke` (kızgınken öfke azalması, sakinken valens artışı) ya da `valens` (eski) |
-| `ENJEKSIYON` | `tam` | Her müşteri dönüşünde talimata eklenen durum: `yok`, `ofke` (düzey + eğilim), `neden` (+ değerlendirme), `tam` (+ önerilen yaklaşım) |
+| `ENJEKSIYON` | `neden` | Her müşteri dönüşünde talimata eklenen durum: `yok`, `ofke` (düzey + eğilim), `neden` (+ değerlendirme), `tam` (+ önerilen yaklaşım) |
 | `LOKAL_MUSTERI_SESI` | `piper` | Müşteri sesi: `piper` (yerel) ya da `elevenlabs` (duygulu, bulut; kredi harcar) |
 | `ELEVENLABS_API_KEY` | (boş) | ElevenLabs anahtarı; yalnızca `.env`'de tutun, git'e girmez |
 | `ELEVEN_ERKEK_SES` / `ELEVEN_KADIN_SES` | Adam / (boş) | ElevenLabs ses kimlikleri; kadın sesi boşsa kadın müşteriler Piper ile konuşur |
@@ -346,7 +346,10 @@ Toplantı kararı: hedef "müşteri kızgın mı, ne kadar kızgın, öfkeyi han
   artışı. Hızlı eğitim (3 tohum × 120 görüşme, son 60): kalma oranı öfke+valens %92,2, yalnızca öfke %87,8,
   valens %92,8, rastgele %38,9. Bağlam artık "konu · kızgın/sakin"; yönetmen öfke ≥ 3'te de uyarır.
 * **Prompt enjeksiyonu** (`ENJEKSIYON`): her müşteri dönüşünden sonra talimata öfke düzeyi ve eğilimi, nedeni ve önerilen
-  yaklaşım eklenir; dört varyant aynı senaryolarda karşılaştırılacak.
+  yaklaşım eklenir. Eşleştirilmiş deney (`egitim/enjeksiyon_deneyi.py`, 4 persona × 2 görüşme, 29 durum × 4 varyant):
+  müşteri tepkisindeki öfke `yok` 0,94 · `ofke` 0,84 · **`neden` 0,60** · `tam` 0,81. Yalnızca `neden` belirgin
+  (yok'a göre −0,33, standart hatanın ~2,7 katı; müşteri kızgınken −1,15). Öneri cümlesi (`tam`) cevabı genel kalıplara
+  kaydırıyor. Varsayılan `neden`.
 * **ElevenLabs müşteri sesi** (`LOKAL_MUSTERI_SESI=elevenlabs`): eleven_v3, ruh haline göre ses etiketi ([angry],
   [frustrated], [calm]…). Test: öfkeli cümlede öfke 2,9 (ses 3,8), sakin cümlede 0. Ücretsiz hesapta ayda 10.000
   karakter; bir görüşme ~400–700 karakter. Hata ya da kota dolunca otomatik Piper'a döner.
