@@ -179,9 +179,10 @@ def promise_violations(text: str, context: str = "") -> list[str]:
         allowed |= {"4 saat", "dort saat"}
     if re.search(r"nakil|nakl|tasin|adres", tc):
         allowed |= {"2 is gunu", "iki is gunu"}
+    # ekli biçimler de yakalanır ("iki günde", "4 saatte"); izin denetimi kök biçimle yapılır
     found = [m.group(0) for m in re.finditer(
-        r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\b", t)
-        if m.group(0) not in allowed]
+        r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\w*", t)
+        if f"{m.group(1)} {m.group(2)}" not in allowed and not re.match(r"bir dakika(niz|cik|$)", m.group(0))]
     found += [m.group(0) for m in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?!\d)", t)
               if not (m.group(1) in ("16", "18") and m.group(2) == "00" and re.search(r"randevu|teknisyen", tc))]
     if re.search(r"\byarin\b", t):
