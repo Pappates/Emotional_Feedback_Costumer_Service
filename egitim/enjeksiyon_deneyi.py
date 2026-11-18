@@ -59,7 +59,7 @@ def main():
                     # tepki: aynı ruh hali ve geçmiş, son asistan sözü bu varyantın cevabı
                     c.history.append({"rol": "asistan", "metin": r["cevap"]})
                     try:
-                        react = c._customer_text(None, False)
+                        react = c._customer_text(None, c.current_issue is None)
                     finally:
                         c.history.pop()
                     ra = emotion.analyze_text(react)
