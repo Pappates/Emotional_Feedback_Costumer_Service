@@ -296,7 +296,7 @@ function showAnalysis(a){
     c.insertAdjacentHTML('afterbegin', chip(`algı: ${an.duygu} · valens ${fmt(an.valens)} · churn %${Math.round(an.churn_riski*100)} · ${an.kaynak}`));
   }
   $('kVal').textContent = fmt(an.valens);
-  $('kEmo').textContent = an.duygu;
+  $('kEmo').textContent = an.ofke != null ? `${an.duygu} · öfke ${an.ofke.toFixed(1)}/4` : an.duygu;
   $('kChurn').textContent = '%' + Math.round(an.churn_riski*100);
   $('kChurnH').textContent = an.churn_riski >= .75 ? 'kritik' : an.churn_riski >= .4 ? 'orta' : 'düşük';
   if(a.odul){ $('kReward').textContent = fmt(a.odul.odul);

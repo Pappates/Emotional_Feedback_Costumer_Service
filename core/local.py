@@ -70,6 +70,52 @@ CUSTOMER_PIPER_VOICES = {  # Gemini ses adı (catalog.py'daki persona sesi) -> (
     "Leda": ("fettah", 1.0),        # Zeynep Hanım (kadın)
     "Kore": ("fettah", 1.06),       # Selin Hanım (kadın; Zeynep'ten ayırmak için hafif perde farkı)
 }
+# Müşteri sesi motoru: "piper" (varsayılan, yerel) ya da "elevenlabs" (bulut, duygulu; ELEVENLABS_API_KEY gerekir).
+# ElevenLabs testi (eleven_v3, aynı cümle 0–4 öfke etiketiyle): Adam sesinde emotion2vec+ 0'da nötr, 1–4'te ~%100 kızgın
+# duydu, Whisper 5/5 hatasız yazdı; Sarah sesinde öfke duyulmadı. Ücretsiz hesap kütüphanedeki Türkçe seslere API'den
+# erişemiyor, bu yüzden hazır sesler. Kadın müşteriler için uygun ses bulunana kadar Piper (ELEVEN_KADIN_SES ile değişir).
+CUSTOMER_TTS = os.getenv("LOKAL_MUSTERI_SESI", "piper").strip().lower()
+ELEVEN_KEY = os.getenv("ELEVENLABS_API_KEY", "").strip()
+ELEVEN_MODEL = os.getenv("ELEVEN_MODEL", "eleven_v3")
+ELEVEN_VOICES = {"Fenrir": os.getenv("ELEVEN_ERKEK_SES", "pNInz6obpgDQGcFmaJgB"),   # Adam (hazır ses)
+                 "Puck": os.getenv("ELEVEN_ERKEK_SES", "pNInz6obpgDQGcFmaJgB"),
+                 "Leda": os.getenv("ELEVEN_KADIN_SES", ""), "Kore": os.getenv("ELEVEN_KADIN_SES", "")}
+ELEVEN_USED = {"karakter": 0, "kapali": False}
+
+
+def _eleven_tag(style: str) -> str:
+    """Müşterinin ruh hali tonlaması (catalog.mood_delivery) -> eleven_v3 ses etiketi."""
+    s = style.lower()
+    for key, tag in (("angry", "[angry]"), ("irritated", "[frustrated]"), ("tired", "[sighs]"),
+                     ("calmer", "[calm]"), ("happy", "[happy]")):
+        if key in s:
+            return tag
+    return ""
+
+
+def eleven_tts(text: str, style: str, voice_id: str) -> bytes | None:
+    """ElevenLabs ile müşteri sesi (16 kHz WAV). Hata ya da kota sorununda None döner, çağıran Piper'a düşer."""
+    import urllib.request
+    if ELEVEN_USED["kapali"]:
+        return None
+    body = json.dumps({"text": f"{_eleven_tag(style)} {text}".strip(), "model_id": ELEVEN_MODEL,
+                       "language_code": "tr"}).encode("utf-8")
+    req = urllib.request.Request(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=pcm_16000",
+                                 data=body, headers={"xi-api-key": ELEVEN_KEY, "Content-Type": "application/json"})
+    try:
+        pcm = urllib.request.urlopen(req, timeout=60).read()
+    except Exception as e:  # noqa: BLE001
+        code = getattr(e, "code", None)
+        print(f"[lokal] ElevenLabs hatası ({code or str(e)[:60]}); müşteri sesi Piper ile devam ediyor", flush=True)
+        if code in (401, 402, 403, 429):     # anahtar, kota ya da plan sorunu: bu oturumda tekrar deneme
+            ELEVEN_USED["kapali"] = True
+        return None
+    ELEVEN_USED["karakter"] += len(text)
+    print(f"[lokal] ElevenLabs: {len(text)} karakter (bu oturumda {ELEVEN_USED['karakter']})", flush=True)
+    x = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    return float_to_wav(x, 16000)
+
+
 # Asistan sesi motoru: "piper" (hızlı, varsayılan) ya da "chatterbox" (çok daha doğal, CPU'da cümle başı ~15 sn)
 TTS_ENGINE = os.getenv("LOKAL_TTS", "piper").strip().lower()
 
@@ -602,6 +648,10 @@ def tts(text: str, style: str, voice_name: str) -> bytes:
         ex = next((v for k, v in _CB_EXAGGERATION if k in style.lower()), 0.5)
         x, sr = _get("chatterbox", _load_chatterbox).synthesize(text, exaggeration=ex)
         return float_to_wav((x / (np.max(np.abs(x)) + 1e-6) * 0.9).astype(np.float32), sr)
+    if voice_name != config.AGENT_VOICE and CUSTOMER_TTS == "elevenlabs" and ELEVEN_KEY and ELEVEN_VOICES.get(voice_name):
+        wav = eleven_tts(text, style, ELEVEN_VOICES[voice_name])
+        if wav:
+            return wav
     if voice_name == config.AGENT_VOICE:
         piper_name, base_pitch = AGENT_PIPER_VOICE, AGENT_PITCH
     else:

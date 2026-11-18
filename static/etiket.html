@@ -179,6 +179,9 @@ async function loadRate(){
   if(!todo.length){ $('rateBox').innerHTML = '<p class="ok">Etiketlenecek kayıt kalmadı. Teşekkürler!</p>'; return; }
   const k = todo[0];
   $('rateBox').innerHTML = `<h2>Kayıt ${E(k.id)}</h2><audio controls autoplay src="${k.ses}" style="width:100%"></audio>
+    <div style="margin:10px 0 4px"><b>Öfke düzeyi</b> <span class="note">(asıl soru: müşteri ne kadar kızgın?)</span>
+      <div class="small5" style="grid-template-columns:repeat(5,1fr)">${['0 · sakin','1 · huzursuz','2 · kızgın','3 · çok kızgın','4 · patlama'].map((l, i) =>
+        `<label><input type="radio" name="ofke" value="${i}">${l}</label>`).join('')}</div></div>
     <div class="grid2"><div>
       ${sam('valens', 'çok olumsuz', 'çok olumlu', 'Valens: ne kadar olumlu/olumsuz?')}
       ${sam('uyarilma', 'sakin, durgun', 'çok gergin, heyecanlı', 'Uyarılma: ne kadar enerjik/gergin?')}
@@ -193,10 +196,10 @@ async function loadRate(){
   $('rateSkip').onclick = () => { todo.push(todo.shift()); loadRate(); };
   $('rateSave').onclick = async () => {
     const v = n => { const x = document.querySelector(`input[name="${n}"]:checked`); return x ? +x.value : null; };
-    const body = {kayit: k.id, etiketleyici: rater, valens: v('valens'), uyarilma: v('uyarilma'), baskinlik: v('baskinlik'),
+    const body = {kayit: k.id, etiketleyici: rater, ofke: v('ofke'), valens: v('valens'), uyarilma: v('uyarilma'), baskinlik: v('baskinlik'),
       kategori: $('kat').value, suc: $('suc').value, belirsizlik: v('belirsizlik'), kontrol_kaybi: v('kontrol_kaybi'),
       haksizlik: v('haksizlik'), guven: v('guven')};
-    if(!body.valens || !body.uyarilma || !body.baskinlik){ $('rateMsg').innerHTML = '<span class="bad">Üç ölçeği de işaretleyin.</span>'; return; }
+    if(body.ofke === null || !body.valens || !body.uyarilma || !body.baskinlik){ $('rateMsg').innerHTML = '<span class="bad">Öfke düzeyini ve üç ölçeği işaretleyin.</span>'; return; }
     await fetch('/api/etiket/puan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     loadRate();
   };
@@ -209,7 +212,7 @@ async function loadSummary(){
   const al = x => x == null ? '–' : `<span class="${x >= 0.667 ? 'ok' : x >= 0.4 ? '' : 'bad'}">${x.toFixed(2)}</span>`;
   $('kpis').innerHTML = [
     ['Kayıt', s.kayit_sayisi, `${s.konusmacilar.length} konuşmacı`], ['≥3 etiketli', s.en_az_3_etiketli, `${s.etiketleyiciler.length} etiketleyici`],
-    ['Uyum · valens', al(s.alfa.valens), 'Krippendorff α'], ['Uyum · uyarılma', al(s.alfa.uyarilma), 'Krippendorff α'],
+    ['Uyum · öfke', al(s.alfa.ofke), 'Krippendorff α'], ['Uyum · valens', al(s.alfa.valens), 'Krippendorff α'], ['Uyum · uyarılma', al(s.alfa.uyarilma), 'Krippendorff α'],
     ['Uyum · baskınlık', al(s.alfa.baskinlik), 'Krippendorff α'], ['Uyum · kategori', al(s.alfa.kategori), 'α (nominal)'],
     ['Canlandırma ↔ algı', s.hedefle_uyum == null ? '–' : '%' + Math.round(s.hedefle_uyum * 100), 'kart kategorisi = çoğunluk etiketi'],
     ['Ön etiket ↔ insan', s.on_etiket_uyumu == null ? '–' : '%' + Math.round(s.on_etiket_uyumu * 100), 'YODAS kesitlerinde model ön etiketi'],
@@ -224,7 +227,7 @@ $('evalBtn').onclick = async () => {
   $('evalBtn').disabled = true; $('evalOut').innerHTML = '<p class="note">Çalışıyor (kayıt başına birkaç saniye)…</p>';
   try{
     const r = await (await fetch('/api/etiket/degerlendir', {method: 'POST'})).json();
-    $('evalOut').innerHTML = r.n ? `<div class="kpis" style="margin-top:10px">${[['CCC · valens', r.ccc_valens], ['CCC · uyarılma', r.ccc_uyarilma],
+    $('evalOut').innerHTML = r.n ? `<div class="kpis" style="margin-top:10px">${[['Kızgın mı? doğruluk', r.kizgin_mi_dogruluk], ['CCC · öfke', r.ccc_ofke], ['CCC · valens', r.ccc_valens], ['CCC · uyarılma', r.ccc_uyarilma],
       ['CCC · baskınlık', r.ccc_baskinlik], ['Kategori UAR', r.kategori_uar]].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div>
       <div class="v">${fa(v)}</div></div>`).join('')}</div><p class="note">${r.n} kayıt (en az 2 etiketleyicili). CCC: 1 = insanlarla tam uyum, 0 = ilişki yok.</p>
       <div class="tw"><table><thead><tr><th>Kayıt</th><th>Valens insan/model</th><th>Uyarılma insan/model</th><th>Baskınlık insan/model</th>

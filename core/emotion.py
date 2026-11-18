@@ -88,6 +88,9 @@ def _with_psych(out: dict) -> dict:
     from . import psych
     out["psikoloji"] = psych.assess(out.get("transkript", ""), float(out["valens"]), float(out["uyarilma"]),
                                     out.get("akustik"))
+    o = psych.anger_score(out)
+    out["ofke"] = o["duzey"]
+    out["ofke_detay"] = o
     return out
 
 

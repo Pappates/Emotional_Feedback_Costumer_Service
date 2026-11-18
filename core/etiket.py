@@ -106,6 +106,7 @@ def save_rating(d: dict) -> dict:
            "suc": d.get("suc") if d.get("suc") in SUC else "yok",
            "belirsizlik": int(d.get("belirsizlik", 1)), "kontrol_kaybi": int(d.get("kontrol_kaybi", 1)),
            "haksizlik": int(d.get("haksizlik", 1)), "guven": int(d.get("guven", 3)),
+           "ofke": min(4, max(0, int(d.get("ofke", 0)))),
            "tarih": time.strftime("%Y-%m-%dT%H:%M:%S")}
     for k in ("valens", "uyarilma", "baskinlik"):
         row[k] = min(9, max(1, row[k]))
@@ -152,13 +153,14 @@ def summary() -> dict:
     by = {}
     for p in rat:
         by.setdefault(p["kayit"], []).append(p)
-    alpha = {k: krippendorff_alpha({u: [p[k] for p in ps] for u, ps in by.items()}) for k in ("valens", "uyarilma", "baskinlik")}
+    alpha = {k: krippendorff_alpha({u: [p[k] for p in ps if k in p] for u, ps in by.items()}) for k in ("valens", "uyarilma", "baskinlik", "ofke")}
     alpha["kategori"] = krippendorff_alpha({u: [p["kategori"] for p in ps] for u, ps in by.items()}, "nominal")
     items = []
     for u, ps in by.items():
         cats = [p["kategori"] for p in ps]
         items.append({"kayit": u, "n": len(ps), **{k: round(float(np.mean([p[k] for p in ps])), 2) for k in
                      ("valens", "uyarilma", "baskinlik", "belirsizlik", "kontrol_kaybi", "haksizlik")},
+                      "ofke": round(float(np.mean([p["ofke"] for p in ps if "ofke" in p])), 2) if any("ofke" in p for p in ps) else None,
                       "kategori": max(set(cats), key=cats.count), "hedef": rec[u].get("hedef_kategori"),
                       "konusmaci": rec[u]["konusmaci"]})
     hedef_uyum = [i["kategori"] == i["hedef"] for i in items if i["hedef"]]
@@ -173,7 +175,7 @@ def summary() -> dict:
 def to_csv() -> str:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
-    cols = ["kayit", "konusmaci", "kart", "hedef_kategori", "etiketleyici", "valens", "uyarilma", "baskinlik", "kategori",
+    cols = ["kayit", "konusmaci", "kart", "hedef_kategori", "etiketleyici", "ofke", "valens", "uyarilma", "baskinlik", "kategori",
             "suc", "belirsizlik", "kontrol_kaybi", "haksizlik", "guven", "tarih"]
     w.writerow(cols)
     rec = {r["id"]: r for r in _read(KAYIT)}
@@ -208,11 +210,15 @@ def evaluate() -> dict:
                      "uyarilma_insan": (i["uyarilma"] - 1) / 8, "uyarilma_model": an["uyarilma"],
                      "baskinlik_insan": _sam_to_unit(i["baskinlik"]), "baskinlik_model": ps.get("baskinlik"),
                      "kategori_insan": i["kategori"], "kategori_model": ps.get("kategori") or an.get("duygu"),
+                     "ofke_insan": i.get("ofke"), "ofke_model": an.get("ofke"),
                      "transkript": an.get("transkript")})
     out = {"n": len(rows)}
-    for k in ("valens", "uyarilma", "baskinlik"):
-        pairs = [(r[f"{k}_insan"], r[f"{k}_model"]) for r in rows if r[f"{k}_model"] is not None]
+    for k in ("ofke", "valens", "uyarilma", "baskinlik"):
+        pairs = [(r[f"{k}_insan"], r[f"{k}_model"]) for r in rows if r[f"{k}_model"] is not None and r[f"{k}_insan"] is not None]
         out[f"ccc_{k}"] = ccc(*zip(*pairs)) if len(pairs) >= 3 else None
+    ang = [(r["ofke_insan"] >= 1.5, r["ofke_model"] >= 1.5) for r in rows if r["ofke_insan"] is not None and r["ofke_model"] is not None]
+    if ang:   # toplantı hedefi: kızgın mı normal mi (ikili doğruluk, 1,5 eşiği)
+        out["kizgin_mi_dogruluk"] = round(float(np.mean([a == b for a, b in ang])), 3)
     cats = sorted({r["kategori_insan"] for r in rows})
     if cats:
         recall = [np.mean([r["kategori_model"] == c for r in rows if r["kategori_insan"] == c]) for c in cats]

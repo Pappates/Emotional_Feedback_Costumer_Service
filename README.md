@@ -138,6 +138,11 @@ Tam ses analizi (Whisper + iki duygu modeli + akustik) tur başına ~1,5-2,5 sn 
 | `LOKAL_TEKRAR_CEZASI` | `1.0` | Dil modelinin tekrar cezası. Türkçede ekleri cezalandırdığı için kapalı (eskiden 1,15) |
 | `LOKAL_SICAKLIK_CARPANI` | `0.7` | Tüm sıcaklıkların çarpanı (düşük = daha tutarlı, daha az yaratıcı) |
 | `LOKAL_YAZIM_DENETIMI` | `1` | Türkçe yazım denetimi (zeyrek + wordfreq); `0` kapatır |
+| `ODUL` | `ofke` | Öğrenen beynin ödülü: `ofke` (kızgınken öfke azalması, sakinken valens artışı) ya da `valens` (eski) |
+| `ENJEKSIYON` | `tam` | Her müşteri dönüşünde talimata eklenen durum: `yok`, `ofke` (düzey + eğilim), `neden` (+ değerlendirme), `tam` (+ önerilen yaklaşım) |
+| `LOKAL_MUSTERI_SESI` | `piper` | Müşteri sesi: `piper` (yerel) ya da `elevenlabs` (duygulu, bulut; kredi harcar) |
+| `ELEVENLABS_API_KEY` | (boş) | ElevenLabs anahtarı; yalnızca `.env`'de tutun, git'e girmez |
+| `ELEVEN_ERKEK_SES` / `ELEVEN_KADIN_SES` | Adam / (boş) | ElevenLabs ses kimlikleri; kadın sesi boşsa kadın müşteriler Piper ile konuşur |
 
 **Küçük modellerle yaşanan sorunlar ve alınan önlemler** (gerçek modellerle test edildi):
 
@@ -329,6 +334,23 @@ Gemma 3 4B zaman zaman bozuk Türkçe üretiyor. Ölçüm: gerçek bir görüşm
   Müşterinin "Sakin ve yumuşak" gibi yönerge kelimelerini konuşma diye söylemesi engellendi.
 * **Denenen alternatif:** Kumru-2B (Türkçe için sıfırdan eğitilmiş, Apache-2.0). Asistan rolünde akıcı ama müşteri
   rolünü oynayamıyor (temsilci gibi konuşuyor), yönergeyi sızdırıyor, kelimeleri bitiştiriyor ("ikigündür"); elendi.
+
+## Revize plan, Aşama 1: öfke odağı
+
+Toplantı kararı: hedef "müşteri kızgın mı, ne kadar kızgın, öfkeyi hangi yöntem azaltıyor".
+
+* **Öfke düzeyi 0–4** (`core/psych.py`, `anger_score`): ses kanalı emotion2vec+ "kızgın" olasılığı × gerginlik (kızgın mı
+  normal mi), metin kanalı olumsuzluk + talep, suçu kuruma yükleme, ünlem, ayrılma tehdidi (derece). Raporda öfke eğrisi
+  (ölçülen ve gizli ruh halinin karşılığı), her turda ses/metin ayrımıyla öfke satırı; panelde duygu yanında öfke.
+* **Ödül:** müşteri kızgınken `0,25 × (önceki öfke − yeni öfke) + 0,15 × çözülen sorun`; iki tur da sakinse valens
+  artışı. Hızlı eğitim (3 tohum × 120 görüşme, son 60): kalma oranı öfke+valens %92,2, yalnızca öfke %87,8,
+  valens %92,8, rastgele %38,9. Bağlam artık "konu · kızgın/sakin"; yönetmen öfke ≥ 3'te de uyarır.
+* **Prompt enjeksiyonu** (`ENJEKSIYON`): her müşteri dönüşünden sonra talimata öfke düzeyi ve eğilimi, nedeni ve önerilen
+  yaklaşım eklenir; dört varyant aynı senaryolarda karşılaştırılacak.
+* **ElevenLabs müşteri sesi** (`LOKAL_MUSTERI_SESI=elevenlabs`): eleven_v3, ruh haline göre ses etiketi ([angry],
+  [frustrated], [calm]…). Test: öfkeli cümlede öfke 2,9 (ses 3,8), sakin cümlede 0. Ücretsiz hesapta ayda 10.000
+  karakter; bir görüşme ~400–700 karakter. Hata ya da kota dolunca otomatik Piper'a döner.
+* **Etiketleme:** `/etiket`'te "öfke düzeyi 0–4" sorusu, öfke uyumu (α) ve "kızgın mı?" doğruluğu.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 

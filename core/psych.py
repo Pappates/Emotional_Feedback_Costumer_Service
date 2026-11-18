@@ -119,3 +119,41 @@ def assess(text: str, valence: float, arousal: float, acoustic: dict | None = No
         "gerekce": ", ".join(gerekce) or "belirgin değerlendirme yok",
         "oneri_strateji": oneri[0] if oneri else None, "oneri": oneri[1] if oneri else None,
     }
+
+
+# --------------------------------------------------------------------------- öfke düzeyi (0–4)
+OFKE_ADLARI = ["sakin", "huzursuz", "kızgın", "çok kızgın", "öfke patlaması"]
+
+
+def anger_score(an: dict) -> dict:
+    """Müşterinin öfke düzeyi, 0 (sakin) … 4 (öfke patlaması), sürekli değer.
+
+    Toplantı kararı: hedef "kızgın mı, ne kadar kızgın, hangi yöntem öfkeyi azaltıyor".
+    * Ses (emotion2vec+): "kızgın" olasılığı (+ tiksintinin yarısı), gerginlikle ölçeklenir. ElevenLabs testinde
+      kızgın/nötr ayrımını net yaptı (0'da nötr, 1–4'te ~%100 kızgın) ama dereceyi ayırmadı.
+    * Metin: olumsuzluk + öfke ipuçları (talep, suçu kuruma yükleme, ünlem, ayrılma tehdidi); dereceyi ayıran kısım.
+    Ses modeli yoksa (yalnızca metin, Gemini ya da demo modu) yalnızca metin kısmı kullanılır.
+    """
+    t = an.get("transkript", "") or ""
+    ps = an.get("psikoloji") or {}
+    la = an.get("lokal_ayrinti") or {}
+    v_text = la.get("valens_metin", an.get("valens", 0.0))
+    neg = max(0.0, min(1.0, -float(v_text)))
+    churn = bool((la.get("kelime_ipuclari") or {}).get("churn_ifadeleri")) or an.get("churn_riski", 0) >= 0.85
+    cue = min(1.0, 0.4 * ps.get("talep", 0) + (0.4 if ps.get("suc_yukleme") == "kurum" else 0.0)
+              + 0.15 * min(2, t.count("!")) + (0.5 if churn else 0.0))
+    text01 = max(0.0, min(1.0, 0.65 * neg + 0.35 * cue))
+    probs = (la.get("ses_modeli") or {}).get("olasiliklar") or {}
+    audio01 = None
+    if probs and "angry" in probs:
+        p = probs.get("angry", 0.0) + 0.5 * probs.get("disgusted", 0.0)
+        audio01 = max(0.0, min(1.0, p * (0.6 + 0.4 * float(an.get("uyarilma", 0.5)))))
+    a01 = text01 if audio01 is None else 0.5 * audio01 + 0.5 * text01
+    level = round(4 * a01, 2)
+    return {"duzey": level, "ad": OFKE_ADLARI[min(4, int(level + 0.5))], "kizgin": level >= 1.5,
+            "ses": None if audio01 is None else round(4 * audio01, 2), "metin": round(4 * text01, 2)}
+
+
+def true_anger(mood: float) -> float:
+    """Simülasyonun gizli ruh halinin öfke karşılığı (rapordaki "gerçek" çizgi): ruh hali −1 → 4, 0 ve üstü → 0."""
+    return round(4 * max(0.0, min(1.0, -mood)), 2)

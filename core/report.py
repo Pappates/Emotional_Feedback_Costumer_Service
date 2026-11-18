@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config
+from . import config, psych
 from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES
 
 REPORT_DIR = config.DATA_DIR / "raporlar"
@@ -210,6 +210,29 @@ def _svg_mood(rep) -> str:
             f'{grid}{xt}{series(tru, "s2 dash", "gerçek ruh hali")}{series(per, "s1", "algılanan valens")}</svg>')
 
 
+def _svg_anger(rep) -> str:
+    """Öfke düzeyi (0–4): asistanın ölçtüğü (düz) ve simülasyonun gizli gerçeği (kesikli)."""
+    rows = [t for t in rep["turlar"] if t["asistan"] and t["asistan"]["algi"].get("ofke") is not None]
+    if not rows:
+        return ""
+    W, H, L, R, T, B = 720, 200, 44, 16, 14, 26
+    n = len(rows)
+    x = lambda i: L + (W - L - R) * (i / max(1, n - 1))
+    y = lambda v: T + (H - T - B) * (1 - v / 4)
+    grid = "".join(f'<line x1="{L}" x2="{W-R}" y1="{y(v):.1f}" y2="{y(v):.1f}" class="grid"/>'
+                   f'<text x="{L-8}" y="{y(v)+4:.1f}" class="ax" text-anchor="end">{v}</text>' for v in (0, 1, 2, 3, 4))
+    xs = "".join(f'<text x="{x(i):.1f}" y="{H-6}" class="ax" text-anchor="middle">T{i}</text>' for i in range(n))
+    alg = [float(t["asistan"]["algi"]["ofke"]) for t in rows]
+    ger = [psych.true_anger(float(t["musteri"]["gercek_ruh_hali"])) for t in rows]
+    def line(vals, cls, label):
+        pts = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(vals))
+        dots = "".join(f'<circle cx="{x(i):.1f}" cy="{y(v):.1f}" r="4" class="{cls}"><title>T{i} · {label}: {v:.1f}</title></circle>'
+                       for i, v in enumerate(vals))
+        return f'<polyline points="{pts}" class="{cls}"/>{dots}'
+    return (f'<svg viewBox="0 0 {W} {H}" class="chart" role="img" aria-label="Öfke düzeyi">{grid}{xs}'
+            f'{line(ger, "s2 dash", "gerçek öfke")}{line(alg, "s1", "algılanan öfke")}</svg>')
+
+
 def _svg_churn(rep) -> str:
     rows = [t for t in rep["turlar"] if t["asistan"]]
     if not rows:
@@ -385,7 +408,10 @@ def to_html(rep: dict) -> str:
                     f'<tr><td>Valens</td><td class="num"><b>{_f(an["valens"])}</b> (gerçek {_f(mu["gercek_ruh_hali"])}, hata {_f(a["algi_hatasi"])})</td></tr>'
                     f'<tr><td>Uyarılma</td><td class="num">{an["uyarilma"]:.2f}</td></tr>'
                     f'<tr><td>Churn riski</td><td class="num">%{an["churn_riski"]*100:.0f}</td></tr>'
-                    f'<tr><td>Algılanan konu</td><td class="num">{E(ISSUES.get(an["konu"], {}).get("ad", "Diğer"))}</td></tr>{fusion}</tbody></table>'
+                    + (f'<tr><td>Öfke düzeyi</td><td class="num"><b>{an["ofke"]:.1f}</b> / 4 ({E(an["ofke_detay"]["ad"])}; ses '
+                       f'{"–" if an["ofke_detay"]["ses"] is None else format(an["ofke_detay"]["ses"], ".1f")}, metin {an["ofke_detay"]["metin"]:.1f}; '
+                       f'gerçek {psych.true_anger(float(mu["gercek_ruh_hali"])):.1f})</td></tr>' if an.get("ofke_detay") else "")
+                    + f'<tr><td>Algılanan konu</td><td class="num">{E(ISSUES.get(an["konu"], {}).get("ad", "Diğer"))}</td></tr>{fusion}</tbody></table>'
                     + (f'<p class="cue"><b>Whisper\'ın duyduğu:</b> {E(an["transkript"])}</p>'
                        if an.get("transkript") and an["transkript"].strip() != mu["metin"].strip() else "")
                     + f'<p class="cue"><b>Ses ipuçları:</b> {E(an.get("ses_ipuclari") or "–")}</p>'
@@ -414,8 +440,10 @@ def to_html(rep: dict) -> str:
             rew = ""
             if o:
                 rew = (f'<h4>Önceki hamlenin ödülü: {E(names[o["strateji"]])} + {E(names[o["ton"]])}</h4>'
-                       f'<p class="formula">({_f(o["yeni_valens"])} − {_f(o["onceki_valens"])}) + 0,15 × {o["cozulen_sorun"]} = '
-                       f'{_f(o["duygu_degisimi"])} + {_f(o["ilerleme_bonusu"])} = <b>{_f(o["ham_odul"])}</b>'
+                       + (f'<p class="formula">0,25 × ({o["onceki_ofke"]:.1f} − {o["yeni_ofke"]:.1f}) [öfke azalması] + 0,15 × {o["cozulen_sorun"]} = '
+                          if o.get("tip") == "ofke" else
+                          f'<p class="formula">({_f(o["yeni_valens"])} − {_f(o["onceki_valens"])}) + 0,15 × {o["cozulen_sorun"]} = ')
+                       + f'{_f(o["duygu_degisimi"])} + {_f(o["ilerleme_bonusu"])} = <b>{_f(o["ham_odul"])}</b>'
                        + (f' → öğrenmeye <b>{_f(o["ogrenmeye_giren"])}</b> olarak girdi (kırpıldı)' if o["ham_odul"] != o["ogrenmeye_giren"] else "")
                        + '</p>')
             sec = a.get("secim")
@@ -467,7 +495,9 @@ def to_html(rep: dict) -> str:
 <div class="kpis">{kpis}</div>
 <section class="card"><h2>Duygu gidişatı</h2>
 <div class="legend"><span><i class="l1"></i>Asistanın algıladığı valens</span><span><i class="l2"></i>Müşterinin gerçek (gizli) ruh hali</span></div>
-{_svg_mood(rep)}<h2 style="margin-top:14px">Algılanan churn riski</h2>{_svg_churn(rep)}
+{_svg_mood(rep)}<h2 style="margin-top:14px">Öfke düzeyi (0 sakin … 4 öfke patlaması)</h2>
+<div class="legend"><span><i class="l1"></i>Asistanın ölçtüğü öfke</span><span><i class="l2"></i>Gizli ruh halinin öfke karşılığı</span></div>
+{_svg_anger(rep)}<h2 style="margin-top:14px">Algılanan churn riski</h2>{_svg_churn(rep)}
 <p class="note">Strateji kullanımı: {usage}<br>Ton kullanımı: {usage_t}</p></section>
 <section class="card"><h2>Öğrenilen tercihler ve gizli tercihler</h2>{lv}</section>
 <section class="card"><h2>Yöntem: duygu değişimini nasıl analiz ediyoruz?</h2>{METHOD_LOKAL if rep["mod"] == "lokal" else METHOD_GEMINI}</section>

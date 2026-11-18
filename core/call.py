@@ -18,11 +18,20 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel, Field
 
-from . import config, emotion, llm, tr_check
+from . import config, emotion, llm, psych, tr_check
 from .catalog import ISSUES, PERSONAS, STRATEGIES, TONES, TOOLS, mood_delivery, mood_label, mood_speech
 from .learner import REWARD_CLIP, CallLearner, GlobalModel
 
 PROGRESS_WEIGHT = 0.15
+# Ödül türü (toplantı kararı: hedef öfkeyi azaltmak). "ofke": müşteri kızgınken ödül = (önceki öfke − yeni öfke) × 0,25
+# + çözüm bonusu (bir öfke düzeyi düşüş +0,25); iki tur da sakinse (öfke < 0,5) öfke sinyal vermez, valens artışı kullanılır.
+# Hızlı eğitimde (3 tohum × 120 görüşme): yalnızca öfke %87,8, öfke + sakinken valens %92,2, valens %92,8, rastgele %38,9 kaldı.
+# "valens": eski ödül (valens artışı).
+REWARD_MODE = os.getenv("ODUL", "ofke").strip().lower()
+ANGER_REWARD_SCALE = 0.25
+# Prompt enjeksiyonu: her müşteri dönüşünden sonra asistanın talimatına eklenen durum bloğu.
+# yok | ofke (düzey + eğilim) | neden (+ değerlendirme) | tam (+ önerilen yaklaşım). Deneyle karşılaştırılacak.
+INJECTION = os.getenv("ENJEKSIYON", "tam").strip().lower()
 RESOLVE_MOOD_BONUS = 0.15
 STAY_THRESHOLD = 0.3
 TOOL_NAMES = tuple(TOOLS)
@@ -214,13 +223,23 @@ def drop_bad_turkish(text: str) -> tuple[str, list[str]]:
     return text, bad_all
 
 
-def _psych_hint(an: dict, end: str) -> str:
-    """Psikolojik durumu asistana kısaca söyler. Strateji seçimini bandit yapar; bu ipucu yalnızca seçilen strateji
-    içinde nasıl konuşacağını şekillendirir (öğrenmeyi bozmamak için seçimi değiştirmez)."""
-    ps = an.get("psikoloji")
-    if not ps or ps["gerekce"] == "belirgin değerlendirme yok":
+def _psych_hint(an: dict, end: str, trend: float = 0.0) -> str:
+    """Prompt enjeksiyonu: her müşteri dönüşünden sonra talimata eklenen durum bloğu (ENJEKSIYON ayarı).
+    Strateji seçimini bandit yapar; bu blok yalnızca seçilen strateji içinde nasıl konuşacağını şekillendirir."""
+    if INJECTION == "yok":
         return ""
-    return f" Psikolojik durum: {ps['kategori']} ({ps['gerekce']})." + (f" {ps['oneri']}" if ps.get("oneri") else "") + end
+    ps = an.get("psikoloji") or {}
+    o = an.get("ofke_detay") or {}
+    lvl = float(an.get("ofke", 0.0))
+    yon = "yükseliyor" if trend >= 0.5 else "düşüyor" if trend <= -0.5 else "aynı"
+    out = f" Müşterinin öfkesi: {lvl:.1f}".replace(".", ",") + f"/4 ({o.get('ad', '')}), {yon}."
+    if lvl >= 2.5:
+        out += " Önce öfkeyi yatıştır: kısa cümle, savunmaya geçme, somut adım."
+    if INJECTION in ("neden", "tam") and ps.get("gerekce") and ps["gerekce"] != "belirgin değerlendirme yok":
+        out += f" Nedeni: {ps['gerekce']}."
+    if INJECTION == "tam" and ps.get("oneri"):
+        out += f" {ps['oneri']}"
+    return out + end
 
 
 def partial_json_string(buf: str, key: str) -> tuple[str, bool]:
@@ -289,6 +308,8 @@ class Call:
         self.timeline: list[dict] = []        # grafik için
         self.last_agent: dict | None = None   # son asistan hamlesi (ödül için)
         self.prev_valence: float | None = None
+        self.prev_anger: float | None = None
+        self.anger_trend = 0.0
         self.agent_turns = 0
         self.ended = False
         self.outcome: str | None = None
@@ -676,19 +697,25 @@ class Call:
         v = float(an["valens"])
 
         # 2) Bağlam (ilk turda belirlenir; genel bilgiyi buna göre çağırır)
+        anger = float(an.get("ofke", 0.0))
         if self.learner.ctx is None:
-            gerilim = "yüksek gerilim" if an["uyarilma"] >= 0.5 else "düşük gerilim"
-            self.learner.ctx = f"{an['konu']} · {gerilim}"
+            durum = "kızgın" if anger >= 1.5 else "sakin"
+            self.learner.ctx = f"{an['konu']} · {durum}"
 
         # 3) Öğren: önceki hamlenin ödülü
         reward_info = None
         odul_detay = None
         if self.last_agent is not None and self.prev_valence is not None:
-            r = (v - self.prev_valence) + PROGRESS_WEIGHT * len(self.last_agent["cozulen"])
+            if REWARD_MODE == "ofke" and max(self.prev_anger, anger) >= 0.5:
+                emo = ANGER_REWARD_SCALE * (self.prev_anger - anger)
+            else:   # iki tur da sakin (öfke < 0,5): öfke artık sinyal vermez, memnuniyet (valens artışı) ödüllendirilir
+                emo = v - self.prev_valence
+            r = emo + PROGRESS_WEIGHT * len(self.last_agent["cozulen"])
             odul_detay = {
-                "strateji": self.last_agent["strateji"], "ton": self.last_agent["ton"],
+                "strateji": self.last_agent["strateji"], "ton": self.last_agent["ton"], "tip": "ofke" if REWARD_MODE == "ofke" and max(self.prev_anger, anger) >= 0.5 else "valens",
                 "onceki_valens": round(self.prev_valence, 4), "yeni_valens": round(v, 4),
-                "duygu_degisimi": round(v - self.prev_valence, 4),
+                "onceki_ofke": round(self.prev_anger, 2), "yeni_ofke": round(anger, 2),
+                "duygu_degisimi": round(emo, 4),
                 "cozulen_sorun": len(self.last_agent["cozulen"]),
                 "ilerleme_bonusu": round(PROGRESS_WEIGHT * len(self.last_agent["cozulen"]), 4),
                 "ham_odul": round(r, 4), "ogrenmeye_giren": round(max(-REWARD_CLIP, min(REWARD_CLIP, r)), 4),
@@ -697,11 +724,14 @@ class Call:
             for dim in ("strateji", "ton"):
                 self.learner.update(dim, self.last_agent[dim], r)
             reward_info = {"odul": round(r, 3), "strateji": self.last_agent["strateji"], "ton": self.last_agent["ton"]}
+        self.anger_trend = 0.0 if self.prev_anger is None else anger - self.prev_anger
         self.prev_valence = v
+        self.prev_anger = anger
 
         self.timeline.append({
             "tur": len(self.timeline), "algilanan": round(v, 3), "gercek": round(self.mood, 3),
             "churn": round(float(an["churn_riski"]), 3), "uyarilma": round(float(an["uyarilma"]), 3),
+            "ofke": round(anger, 2), "ofke_gercek": psych.true_anger(self.mood),
         })
 
         base = {"rol": "asistan", "analiz": an, "odul": reward_info, "zaman_cizelgesi": self.timeline}
@@ -716,7 +746,7 @@ class Call:
                             "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}}
 
         # 4) Yönetmen (Director): müşteri kaçmak üzereyse uyarı
-        self.low_streak = self.low_streak + 1 if an["churn_riski"] >= 0.75 else 0
+        self.low_streak = self.low_streak + 1 if (an["churn_riski"] >= 0.75 or anger >= 3) else 0
         director = None
         if self.low_streak >= 2:
             director = "Müşteri kaçmak üzere! Kalıcı bir çözüm taahhüdü ya da somut bir telafi düşün."
@@ -795,7 +825,7 @@ class Call:
             f"Müşterinin son konuşmasının duygu analizi: duygu={an['duygu']}, valens={an['valens']:+.2f}, "
             f"gerginlik={an['uyarilma']:.2f}, churn riski={an['churn_riski']:.2f}. "
             f"Ses ipuçları: {an['ses_ipuclari']}. Söz ipuçları: {an['metin_ipuclari']}\n"
-            + _psych_hint(an, "\n")
+            + _psych_hint(an, "\n", self.anger_trend)
             + (f"YÖNETMEN UYARISI: {director}\n" if director else "")
             + f"\nKullanabileceğin araçlar:\n{tools_txt}\n\n"
             f"Daha önce yapılan işlemler: {'; '.join(done) or 'yok'}\n\n"
@@ -814,7 +844,7 @@ class Call:
                               and re.match(r"\[(\w+)\]", h["metin"]).group(1) in TOOL_SPOKEN})
             prompt = (f"[YÖNERGE] Strateji: {STRATEGIES[s]['ad']} ({STRATEGIES[s]['talimat']}) Ton: {TONES[t]['ad']}. "
                       f"Müşteri: {an['duygu']}, ayrılma riski %{an['churn_riski'] * 100:.0f}."
-                      + _psych_hint(an, "")
+                      + _psych_hint(an, "", self.anger_trend)
                       + (f" UYARI: {director}" if director else "")
                       + f" Yapılanlar: {', '.join(yapilan) or 'yok'}." + tool_hint
                       + " En fazla 2 kısa cümleyle cevap ver; müşteriyi tekrarlama.")
@@ -937,7 +967,7 @@ class Call:
             "tur": self.agent_turns, "son_ruh_hali": round(self.mood, 3), "sonuc": self.outcome,
             "cozulen": len(self.resolved), "sorun": len(self.p["sorunlar"]),
             "ort_odul": round(float(np.mean(self.rewards)), 3) if self.rewards else None,
-            "baglam": self.learner.ctx, "politika": self.policy,
+            "baglam": self.learner.ctx, "politika": self.policy, "odul_tipi": REWARD_MODE, "enjeksiyon": INJECTION,
         }
 
 
