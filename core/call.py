@@ -127,7 +127,8 @@ def ascii_tr(s: str) -> str:
 LOCAL_HISTORY = int(os.getenv("LOKAL_GECMIS", "4"))
 LOCAL_AGENT_SYSTEM = (
     "Sen Deniz, bir telekom şirketinin müşteri temsilcisisin. Telefonda kısa, doğal Türkçe konuş; amacın sorunu gerçekten "
-    "çözmek. Yalnızca müşterinin söylediği sorun için işlem yap, işlemi tekrarlama, yapmadığın işlem için 'yaptım' deme, "
+    "çözmek. Her zaman resmi kal: müşteriye 'siz' diye hitap et, 'canım', 'abi', 'kardeşim', 'hocam' gibi samimi hitaplar "
+    "kullanma. Bilmediğin bir sebep uydurma (örneğin faturadaki ücretin nedenini tahmin etme); yalnızca işlemin sonucunu söyle. Yalnızca müşterinin söylediği sorun için işlem yap, işlemi tekrarlama, yapmadığın işlem için 'yaptım' deme, "
     "işlem adlarını söyleme. Kurallar (dışında saat, süre, tutar uydurma): ariza_kaydi_ac: saha ekibi 4 saatte gelir. "
     "teknisyen_randevusu: bugün 16-18 arası. hat_optimizasyonu: uzaktan, hız 100 Mbps. fatura_incele_iade: hatalı 240 TL "
     "sonraki faturaya iade. nakil_islemi: 2 iş gününde aktif. kampanya_tanimla: 1 ay %30 indirim ve 50 GB. Para hesaba "
@@ -206,6 +207,18 @@ def clean_utterance(text: str, max_sentences: int = 3, max_chars: int = 420) -> 
         out = out[:-1]
     t = " ".join(out)
     return t[:max_chars].rsplit(" ", 1)[0] + "…" if len(t) > max_chars else t
+
+
+# Asistan her zaman resmi kalır (kullanıcı raporu: "Canım, bu durumun sizi..."). Model yine de yazarsa hitap silinir.
+INFORMAL = re.compile(r"(^|[\s,.!?])(canım|canim|kardeşim|kardesim|abi|abla|abicim|hocam|dostum|hayatım|tatlım|"
+                      r"güzelim|kuzum|birader|reis|kanka|yavrum|cicim)(?=[\s,.!?]|$)([,!]?)", re.I)
+
+
+def formalize(text: str) -> str:
+    t = INFORMAL.sub(lambda m: m.group(1) + (m.group(3) if m.group(1).strip() == "" else ""), text or "")
+    t = re.sub(r"\s+([,.!?])", r"\1", re.sub(r"\s{2,}", " ", t))
+    t = re.sub(r",([.!?])", r"\1", t).strip(" ,")
+    return t[:1].upper() + t[1:] if t else t
 
 
 def drop_bad_turkish(text: str) -> tuple[str, list[str]]:
@@ -592,7 +605,7 @@ class Call:
         buf, emitted_upto, spoken, wavs, dropped, dropped_typos = "", 0, [], [], [], []
 
         def accept(sentence: str):
-            sentence = clean_utterance(sentence, max_sentences=1)
+            sentence = formalize(clean_utterance(sentence, max_sentences=1))
             if self.agent_turns > 0 and not spoken:
                 sentence = re.sub(r"^merhaba[,!.]?\s*", "", sentence, flags=re.I)
             if len(sentence) < 2:
@@ -878,7 +891,7 @@ class Call:
                 continue
             out = r.model_dump()
             out["_raw"] = out["cevap"]
-            out["cevap"] = clean_utterance(out["cevap"])
+            out["cevap"] = formalize(clean_utterance(out["cevap"]))
             if self.agent_turns > 0:   # her tura "Merhaba" ile başlamasın
                 out["cevap"] = re.sub(r"^merhaba[,!.]?\s*", "", out["cevap"], flags=re.I) or out["cevap"]
             if out["cevap"][:1].islower():          # cümlenin ortasından başlayan cevap

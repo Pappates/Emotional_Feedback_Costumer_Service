@@ -106,8 +106,18 @@ def eleven_tts(text: str, style: str, voice_id: str) -> bytes | None:
         pcm = urllib.request.urlopen(req, timeout=60).read()
     except Exception as e:  # noqa: BLE001
         code = getattr(e, "code", None)
-        print(f"[lokal] ElevenLabs hatası ({code or str(e)[:60]}); müşteri sesi Piper ile devam ediyor", flush=True)
-        if code in (401, 402, 403, 429):     # anahtar, kota ya da plan sorunu: bu oturumda tekrar deneme
+        detail = ""
+        try:
+            d = json.loads(e.read().decode("utf-8", "ignore")).get("detail", {})
+            detail = d.get("message", "") if isinstance(d, dict) else str(d)
+        except Exception:  # noqa: BLE001
+            detail = str(e)[:80]
+        hint = ""
+        if "key" in detail.lower():
+            hint = (" -> .env'deki ELEVENLABS_API_KEY yanlış: ElevenLabs'te yeni anahtar oluşturup gösterilen uzun sk_ "
+                    "değerini yazın (anahtar KİMLİĞİ değil)")
+        print(f"[lokal] ElevenLabs hatası {code}: {detail[:160]}{hint}; müşteri sesi Piper ile devam ediyor", flush=True)
+        if code in (400, 401, 402, 403, 429):   # anahtar, kota, plan ya da istek sorunu: bu oturumda tekrar deneme
             ELEVEN_USED["kapali"] = True
         return None
     ELEVEN_USED["karakter"] += len(text)

@@ -55,7 +55,7 @@ TONES = {
     "samimi": {
         "ad": "Samimi & rahat",
         "tts": "Say in a friendly, casual, relaxed conversational voice",
-        "yazim": "Samimi ve rahat bir konuşma dili kullan (yine de saygılı ol).",
+        "yazim": "Sıcak ve rahat konuş ama resmiyeti koru: 'siz' diye hitap et; 'canım', 'abi', 'kardeşim' gibi hitaplar yok.",
         "rate": 1.0, "pitch": 1.05,
     },
 }
