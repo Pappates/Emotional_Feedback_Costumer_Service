@@ -183,7 +183,7 @@ def promise_violations(text: str, context: str = "") -> list[str]:
         r"\b(\d+|yarim|bir|iki|uc|dort|bes|on|yirmi|otuz|kirk|kirk bes)\s*(dakika|saat|is gunu|gun|hafta)\b", t)
         if m.group(0) not in allowed]
     found += [m.group(0) for m in re.finditer(r"\b(\d{1,2})[:.](\d{2})(?!\d)", t)
-              if not (m.group(1) in ("16", "18") and m.group(2) == "00")]
+              if not (m.group(1) in ("16", "18") and m.group(2) == "00" and re.search(r"randevu|teknisyen", tc))]
     if re.search(r"\byarin\b", t):
         found.append("yarın")
     # iade yalnızca bir sonraki faturaya yansır; "hesabınıza aktarılacak/yatırılacak" uydurma söz
@@ -191,6 +191,13 @@ def promise_violations(text: str, context: str = "") -> list[str]:
     if m:
         found.append(m.group(0))
     return found
+
+
+RULE_SENTENCE = {   # kural dışı süre sözü atılınca yerine söylenecek doğru süre (cevap "Bu süre zarfında…" diye askıda kalmasın)
+    "teknisyen_randevusu": "Teknisyen randevunuz bugün 16:00 ile 18:00 arasındadır.",
+    "ariza_kaydi_ac": "Saha ekibimiz en geç 4 saat içinde müdahale edecek; daha kısa bir süre için söz veremiyorum.",
+    "nakil_islemi": "Hattınız yeni adreste 2 iş günü içinde aktif olacak.",
+}
 
 
 TOOL_SPOKEN = {"ariza_kaydi_ac": "arıza kaydı", "teknisyen_randevusu": "teknisyen randevusu",
@@ -433,9 +440,10 @@ class Call:
         if ending and self.mode == "lokal" and not FAREWELL.search(ascii_tr(text) + " " + text):
             # küçük model bitişte bazen soru soruyordu ("...söylerseniz sevinirim") ve görüşme cevapsız kesiliyordu
             print(f"[koruma] bitiş cümlesinde veda yok, ekleniyor: {text[:60]!r}", flush=True)
-            text = re.sub(r"[^.!?…]*\?\s*$", "", text).strip() or text
-            text = text.rstrip(" .") + (". Teşekkürler, iyi günler." if ending == "kaldi"
-                                         else ". Hattımı iptal ettireceğim, iyi günler.")
+            sents = [x for x in re.split(r"(?<=[.!?…])\s+", text.strip()) if x]
+            text = " ".join(x for x in sents if not x.endswith("?")) or sents[0]
+            text = text.rstrip() + ("" if re.search(r"[.!?…]$", text.rstrip()) else ".")
+            text += " Teşekkürler, iyi günler." if ending == "kaldi" else " Hattımı iptal ettireceğim, iyi günler."
         wav, url = self._speak(text, mood_delivery(self.mood), self.p["ses"], "musteri")
         self._last_customer_wav = wav
         self.history.append({"rol": "müşteri", "metin": text})
@@ -649,6 +657,9 @@ class Call:
             if bad:                                    # kural dışı söz: bu cümle söylenmez
                 dropped.extend(bad)
                 print(f"[koruma] kural dışı söz, cümle atlandı: {bad}", flush=True)
+                rule = self._rule_sentence()
+                if rule and rule not in spoken and not any(r in spoken for r in RULE_SENTENCE.values()):
+                    return rule                        # yerine kurallardaki doğru süre söylenir
                 return None
             if _similar(sentence, last_cust) > 0.55 or sentence in spoken:
                 return None
@@ -959,12 +970,22 @@ class Call:
                 out["cevap"] = MOCK_AGENT[s]
         return self._agent_post(out, s, t, an)
 
+    def _rule_sentence(self, extra=()) -> str | None:
+        done = {x["arac"] for e in self.events if e.get("araclar") for x in e["araclar"]} | set(extra)
+        return next((RULE_SENTENCE[k] for k in RULE_SENTENCE if k in done), None)
+
     def _agent_post(self, out, s, t, an) -> dict:
         # ikinci denemede de kural dışı söz kaldıysa o cümleleri çıkar (başka cümle varsa)
         out["kural_disi_soz"] = promise_violations(out["cevap"])
         if out["kural_disi_soz"]:
             sents = re.split(r"(?<=[.!?…])\s+", out["cevap"])
-            keep = [x for x in sents if not promise_violations(x)]
+            rule = self._rule_sentence(out.get("araclar") or [])
+            keep = []
+            for x in sents:                        # ilk kural dışı cümlenin yerine kurallardaki doğru süre
+                if not promise_violations(x):
+                    keep.append(x)
+                elif rule and rule not in keep:
+                    keep.append(rule)
             if keep:
                 out["cevap"] = " ".join(keep)
         if self.mode == "lokal":
