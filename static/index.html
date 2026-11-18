@@ -384,6 +384,12 @@ function finishAgentUI(a){
 
 const waitUnpaused = () => new Promise(res => { const t = () => paused ? setTimeout(t, 200) : res(); t(); });
 
+// Müşteri vedalaşınca asistanın resmi kapanış cümlesi (görüşme cevapsız kesilmesin)
+function showClosing(a){
+  if(!a.kapanis) return Promise.resolve();
+  const el = addMsg('asistan', 'Asistan Deniz', a.kapanis.metin, [chip('kapanış')]);
+  return speak(a.kapanis.metin, a.kapanis.ses, el, {});
+}
 function showOutcome(a, rec){
   const ok = a.sonuc === 'kaldi', rp = a.rapor || (CALL.rec && CALL.rec.rapor);
   addMsg('outcome ' + a.sonuc, '', (ok ? '✔ Müşteri sorunlarının çözülmesiyle ayrıldı: KALDI' : '✖ Müşteri operatörü bırakma kararı verdi: KAYIP (churn)')
@@ -416,7 +422,7 @@ async function runCall(rec){
         await play; await waitUnpaused();
         let ev = await ch.next();
         if(!ev || ev.tip === 'hata') throw new Error(ev ? ev.hata : 'akış kesildi');
-        if(ev.tip === 'son' && ev.bitti){ ev.tip = undefined; showAnalysis(ev); showOutcome(ev); break; }
+        if(ev.tip === 'son' && ev.bitti){ ev.tip = undefined; showAnalysis(ev); await showClosing(ev); showOutcome(ev); break; }
         showAnalysis(ev);
         const el = startAgentUI(ev), txt = el.querySelector('.txt');
         txt.textContent = '…'; let first = true;
@@ -441,7 +447,7 @@ async function runCall(rec){
       await play; await waitUnpaused();
       const a = await ap;
       showAnalysis(a);
-      if(a.bitti){ showOutcome(a); break; }
+      if(a.bitti){ await showClosing(a); showOutcome(a); break; }
       play = showAgent(a);
       const cp = next(`/api/call/${CALL.id}/customer`);
       await play; await waitUnpaused();

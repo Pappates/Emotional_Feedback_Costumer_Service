@@ -112,8 +112,36 @@ TOOL_HINTS = {  # lokal modda model aracı çağırmayı unutup "açıyorum" der
     "fatura_incele_iade": r"\biade|(fatura|ucret|paket|tutar)\w*[^.!?]{0,40}(sil|kaldir|duzelt|incele|iptal|geri|kontrol)",
     "nakil_islemi": r"nakil|nakl|tasima islem|yeni adres",
     "hat_optimizasyonu": r"hat test|optimiz|port\w* (ayar|yenile|sifirla)",
-    "kampanya_tanimla": r"kampanya|indirim|hediye|telafi",
+    "kampanya_tanimla": r"kampanya|indirim|hediye|ek internet|\d+ ?gb\b",   # "telafi etmek adına" tek başına kampanya değil
 }
+# Yapılan işlem müşteriye söylenmiş mi? (TOOL_HINTS'ten daha sıkı: "inceleme başlattık" iadeyi söylemiş sayılmaz)
+TOOL_SAID = {
+    "ariza_kaydi_ac": r"ariza|saha ekib|(4|dort) saat",
+    "teknisyen_randevusu": r"teknisyen|randevu",
+    "fatura_incele_iade": r"\biade|geri (yansit|odeme|yatir)|duzelt",
+    "nakil_islemi": r"nakil|nakl|tasima|yeni adres",
+    "hat_optimizasyonu": r"hat test|optimiz|port|profil",
+    "kampanya_tanimla": r"kampanya|indirim|\d+ ?gb\b|ek internet",
+}
+# İşlem yapıldı ama cevapta geçmiyorsa müşteriye söylenecek cümle (yapılan her şey müşteriye açıkça bildirilir)
+TOOL_ANNOUNCE = {
+    "ariza_kaydi_ac": "Arıza kaydınızı açtım; saha ekibimiz 4 saat içinde müdahale edecek.",
+    "teknisyen_randevusu": "Adresinize bugün 16:00 ile 18:00 arası için teknisyen randevusu oluşturdum.",
+    "fatura_incele_iade": "Faturanızdaki hatalı 240 TL bir sonraki faturanıza iade olarak yansıtılacak.",
+    "nakil_islemi": "Nakil talebinizi oluşturdum; hattınız yeni adreste 2 iş günü içinde aktif olacak.",
+    "hat_optimizasyonu": "Hattınızı uzaktan test edip port profilinizi 100 Mbps'e yeniden ayarladım.",
+    "kampanya_tanimla": "Yaşadığınız mağduriyet için hesabınıza bir ay %30 indirim ve 50 GB ek internet tanımladım.",
+}
+FAREWELL = re.compile(r"iyi g[uü]nler|iyi ak[sş]amlar|te[sş]ekk[uü]r|sa[gğ] ?ol|h[oö][sş][cç]a kal|g[oö]r[uü][sş][uü]r[uü]z|kolay gelsin|iptal", re.I)
+
+
+def closing_line(name: str, outcome: str) -> str:
+    """Müşteri vedalaşınca asistanın resmi kapanışı (görüşme yarıda kesilmiş gibi bitmesin)."""
+    if outcome == "ayrildi":
+        return (f"Yaşadığınız sorunlar için tekrar özür dilerim, {name}. Talebinizi ilgili birime iletiyorum. "
+                "İyi günler dilerim.")
+    return (f"Rica ederim, {name}. Yapılan işlemlerin kayıtları hesabınızda açık; başka bir konuda yardıma ihtiyacınız "
+            "olursa bize her zaman ulaşabilirsiniz. İyi günler dilerim.")
 _ASCII = str.maketrans("ıİşŞğĞüÜöÖçÇâÂ", "iissgguuoocc" + "aa")
 
 
@@ -402,6 +430,12 @@ class Call:
             ending = "kaldi" if self.mood > 0 else "ayrildi"
 
         text = self._customer_text(ending, all_done)
+        if ending and self.mode == "lokal" and not FAREWELL.search(ascii_tr(text) + " " + text):
+            # küçük model bitişte bazen soru soruyordu ("...söylerseniz sevinirim") ve görüşme cevapsız kesiliyordu
+            print(f"[koruma] bitiş cümlesinde veda yok, ekleniyor: {text[:60]!r}", flush=True)
+            text = re.sub(r"[^.!?…]*\?\s*$", "", text).strip() or text
+            text = text.rstrip(" .") + (". Teşekkürler, iyi günler." if ending == "kaldi"
+                                         else ". Hattımı iptal ettireceğim, iyi günler.")
         wav, url = self._speak(text, mood_delivery(self.mood), self.p["ses"], "musteri")
         self._last_customer_wav = wav
         self.history.append({"rol": "müşteri", "metin": text})
@@ -671,6 +705,9 @@ class Call:
             araclar = []
         out = {"cevap": " ".join(spoken), "araclar": araclar, "ic_ses": "", "_raw": text}
         reply = self._agent_post(out, s, t, an)
+        for sent in reply.get("duyuru", []):           # yapılan ama söylenmeyen işlem: müşteriye ayrıca söylenir
+            yield speak(sent)
+        reply["cevap"] = " ".join(spoken)
         reply["kural_disi_soz"] = sorted(set(reply.get("kural_disi_soz", [])) | set(dropped))
         reply["bozuk_turkce"] = sorted(set(reply.get("bozuk_turkce", [])) | set(dropped_typos))
         url = self._join_audio(wavs)                    # kayıt ve rapor için tek dosya
@@ -752,9 +789,17 @@ class Call:
               "algi_hatasi": round(v - self.mood, 4), "odul": odul_detay, "baglam": self.learner.ctx}
         self.events.append(ev)
         if self.ended:
+            kapanis = None
+            if self.mode != "mock":
+                k_text = closing_line(self.p["ad"], self.outcome)
+                _, k_url = self._speak(k_text, TONES["resmi_net"]["tts"],
+                                       config.AGENT_VOICE, "asistan_kapanis")
+                kapanis = {"metin": k_text, "ses": k_url}
+                self.history.append({"rol": "asistan", "metin": k_text})
+                ev["kapanis"] = k_text
             ev["beyin_son"] = self.learner.snapshot()
             self._finish()
-            return {"son": {**base, "bitti": True, "sonuc": self.outcome, "ozet": self.summary(),
+            return {"son": {**base, "bitti": True, "kapanis": kapanis, "sonuc": self.outcome, "ozet": self.summary(),
                             "rapor": f"/raporlar/{self.id}" if self.save_report else None,
                             "beyin": self.learner.snapshot(), "baglam": self.learner.ctx}}
 
@@ -802,7 +847,7 @@ class Call:
             "secim": {"strateji": s, "ton": t, "ornekler": {"strateji": s_samples, "ton": t_samples},
                       "neden": {"strateji": self.learner.explain("strateji", s), "ton": self.learner.explain("ton", t)}},
             "cevap": reply["cevap"], "ic_ses": reply["ic_ses"], "araclar": actions,
-            "kural_disi_soz": reply.get("kural_disi_soz", []),
+            "kural_disi_soz": reply.get("kural_disi_soz", []), "duyuru": reply.get("duyuru", []),
             "bozuk_turkce": reply.get("bozuk_turkce", []),
         })
         ev["ses"] = url
@@ -953,6 +998,15 @@ class Call:
             out["araclar"].remove("kampanya_tanimla")       # kampanya zaten tanımlandı: ikinci kez yazma
             if "kampanya_tanimla" in out["metinden_araclar"]:
                 out["metinden_araclar"].remove("kampanya_tanimla")
+        out["duyuru"] = []
+        if self.mode == "lokal":
+            said = ascii_tr(out["cevap"]).lower()
+            for tool in out["araclar"]:
+                if tool in TOOL_ANNOUNCE and not re.search(TOOL_SAID[tool], said):
+                    out["duyuru"].append(TOOL_ANNOUNCE[tool])
+            if out["duyuru"]:
+                print(f"[koruma] yapılan işlem söylenmemişti, duyuruluyor: {out['duyuru']}", flush=True)
+                out["cevap"] = (out["cevap"].rstrip() + " " + " ".join(out["duyuru"])).strip()
         if self.mode == "lokal":
             islem = ", ".join(TOOL_SPOKEN[a] for a in out.get("araclar", []) if a in TOOL_SPOKEN)
             out["ic_ses"] = (f"{STRATEGIES[s]['ad']} ve {TONES[t]['ad'].lower()} ton deniyorum"

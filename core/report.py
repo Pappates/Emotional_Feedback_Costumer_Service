@@ -473,11 +473,15 @@ def to_html(rep: dict) -> str:
                 choice += (f'<div class="bubble agent"><div class="who">Asistan</div>{E(a.get("cevap", ""))}'
                            + (f'<div class="director">Kural dışı söz yakalandı: {E(", ".join(a["kural_disi_soz"]))} '
                               '(ilgili cümle müşteriye söylenmeden çıkarıldı)</div>' if a.get("kural_disi_soz") else "")
+                           + (f'<div class="note">Yapılan ama söylenmeyen işlem cevaba eklendi: {E(" ".join(a["duyuru"]))}</div>'
+                              if a.get("duyuru") else "")
                            + (f'<div class="director">Bozuk Türkçe yakalandı: {E(", ".join(a["bozuk_turkce"]))} '
                               '(ilgili cümle müşteriye söylenmeden çıkarıldı)</div>' if a.get("bozuk_turkce") else "")
                            + f'<div class="meta">İç ses: <i>{E(a.get("ic_ses", ""))}</i>'
                            f'{" · <a href=" + chr(34) + E(a["ses"]) + chr(34) + ">ses kaydı</a>" if a.get("ses") else ""}</div>'
                            + (f'<ul class="tools">{tools}</ul>' if tools else "") + '</div>')
+            if a.get("kapanis"):
+                choice += f'<div class="bubble agent"><div class="who">Asistan · kapanış</div>{E(a["kapanis"])}</div>'
             agent = f'<div class="analysis">{perc}{rew}{choice}</div>'
         tblocks += f'<section class="turn"><h3>Tur {t["tur"]}</h3>{cust}{agent}</section>'
 
