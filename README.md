@@ -355,6 +355,16 @@ Toplantı kararı: hedef "müşteri kızgın mı, ne kadar kızgın, öfkeyi han
   karakter; bir görüşme ~400–700 karakter. Hata ya da kota dolunca otomatik Piper'a döner.
 * **Etiketleme:** `/etiket`'te "öfke düzeyi 0–4" sorusu, öfke uyumu (α) ve "kızgın mı?" doğruluğu.
 
+## Aşama 2: sesten sese model (hazırlık)
+
+Hedef: metin aracılığı olmadan sesi doğrudan anlayan ve sesle cevap veren model. Saha araştırması:
+`docs/sesten_sese_saha_arastirmasi.md`. Seçilen temel **TR-Omni-E4B** (Türkçe, Apache-2.0); öfke ölçümü ayrı model
+olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim açık ve sentetik veriyle yapılacak.
+
+* **Baseline** (`egitim/s2s_baseline.ipynb`, Colab L4/A100): eğitimden önce TR-Omni'nin TurEV'de duygu algısı, ElevenLabs
+  müşteri tepkilerinde 0-4 öfke puanı ve sesli cevapları (süre, Türkçe yazım, cevap sesinin duygusu) ile emotion2vec+
+  base'in aynı örneklemdeki hazır etiketi ölçülür. Betik: `egitim/s2s_baseline.py`; sonuçlar `ozet.json`.
+
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 
 * **Ücretsiz katmanda TTS kotası çok düşük:** model başına günde yalnızca birkaç seslendirme. Bir sesli
