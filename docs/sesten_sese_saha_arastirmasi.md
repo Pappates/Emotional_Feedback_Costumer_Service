@@ -137,8 +137,36 @@ Ham sonuç: `egitim/sonuc_s2s_baseline.json`.
   kullanmıyor. Bu, 2. bölümdeki "duyuyor ama dinlemiyor" bulgusunun daha güçlü bir hâli.
 * Öfke ölçümü ayrı ses modeliyle (emotion2vec+) yapılır, sonuç TR-Omni'ye metin olarak verilir.
 * Cevap içeriği empatik ama kalıplı. 20 cevabın 1'inde konu kaymış, 1'inde bozuk kelime var.
-* En büyük engel gecikme: akış olmadan cevabın tamamı ortalama 24 sn, en uzun 63 sn. Sıradaki ölçüm: akışla
-  ilk ses süresi ve A100'de toplam süre.
+* En büyük engel gecikme: akış olmadan cevabın tamamı ortalama 24 sn, en uzun 63 sn.
+
+**Gecikme dökümü (L4, n=20, `omni_gecikme`).** Cevap cümle cümle seslendirildiğinde ilk sesin süresi:
+
+| Adım | Süre |
+|---|---|
+| Düşünürün ilk kelimesi | 0,22 sn |
+| Düşünürün ilk cümlesi | 1,96 sn |
+| İlk ses (ilk cümle + seslendirmesi) | ort 9,4 sn, medyan 8,7 sn, en çok 23,6 sn |
+| Konuşucunun gerçek zaman oranı | 1,65 (konuşmadan yavaş) |
+
+Darboğaz konuşucu (VoxCPM2): bir cümleyi seslendirmek ~7 sn sürüyor. TR-Omni konuşucuyu derleme kapalı
+(`optimize=False`) ve akışsız (`streaming=False`) çağırıyor. Sıradaki deneme (`omni_konusucu`): akışlı çözme,
+derleme ve yarı difüzyon adımı. Bunlar yetmezse düşünür kalır, konuşucu daha hızlı bir Türkçe TTS ile değiştirilir.
+
+**Enjeksiyon (L4, 20 müşteri × 3 koşul, `omni_enjeksiyon`).** Öfke bilgisi kullanıcı turuna metin olarak
+verildi (`core/call.py` biçimi):
+
+| | yok | sakin (0,5/4) | öfkeli (3,5/4) |
+|---|---|---|---|
+| Empati/özür içeren cevap | %40 | %65 | %85 |
+| Ortalama kelime | 22,7 | 18,3 | 17,0 |
+| "yok" cevabına benzerlik | 1,00 | 0,34 | 0,29 |
+| Modelin seçtiği ton | 14 sakin, 3 nötr, 2 ciddi, 1 şefkatli | 18 sakin | 20 sakin |
+| Not müşteriye sızdı | 0 | 0 | 1 |
+
+* Enjeksiyon cevabın sözlerini değiştiriyor: öfkeli notta daha empatik ve daha kısa. Mimarinin dayanağı doğrulandı.
+* Etkinin bir kısmı notun varlığından: sakin notu da empatiyi artırıyor. Öfke düzeyinin kendi etkisi ~20 puan.
+* Tek sızıntı sınırda: "sizi ne kadar öfkelendirdiğini hissedebiliyorum". Kızgın müşteriye öfkesini söylemek riskli.
+* Ton etiketi bilgi taşımıyor (neredeyse hep "sakin"); konuşucu da etiketi kullanmıyor.
 
 ## Kaynaklar
 

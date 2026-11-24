@@ -16,6 +16,13 @@ Bölümler (her biri ayrı .jsonl dosyasına satır satır yazılır; Colab kopa
   omni_enjeksiyon Aynı tepkiler, üç koşul: yok | sakin | ofkeli. Öfke bilgisi kullanıcı turuna metin olarak eklenir
               (core/call.py biçiminde). Cevap metni ve modelin kendi seçtiği ton etiketi karşılaştırılır: ton,
               kelime sayısı, empati/özür, bilginin müşteriye sızması, "yok" cevabına benzerlik.
+  omni_konusucu Konuşucuyu (VoxCPM2) hızlandırma denemesi. omni_gecikme'deki cevaplar aynı cümlelerle üç ayarda
+              seslendirilir; hepsinde ses akışla (parça parça) çözülür:
+                akis             derleme kapalı (TR-Omni'nin varsayılanı), difüzyon adımı model ayarındaki kadar
+                akis_derleme     + torch.compile (VoxCPM2'nin kendi optimize() yolu)
+                akis_derleme_yarim + difüzyon adımı yarıya iner (kalite düşebilir; sesler dinlemek için saklanır)
+              Ölçülen: ilk ses parçasının süresi, gerçek zaman oranı, tahmini ilk ses
+              (düşünürün ilk cümlesi + durumlar + ilk parça).
 
 Kullanım (Colab, L4 veya A100; TR-Omni ~17 GB GPU belleği ister, T4 yetmez):
   python egitim/s2s_baseline.py --turev "<TurEV Sound Source>" --model <TR-Omni klasörü> \
@@ -51,7 +58,8 @@ PROMPT_DUYGU = ("Bu kaydı yalnızca ses tonuna göre değerlendir, sözlerin an
                 "Yalnızca tek kelime yaz: kızgın, sakin, mutlu ya da üzgün.")
 PROMPT_OFKE = ("Bu müşterinin sesindeki ve sözlerindeki öfkeyi 0 ile 4 arasında puanla. 0 hiç öfkeli değil, "
                "4 çok öfkeli. Yalnızca tek bir rakam yaz.")
-BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon"]
+BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_konusucu"]
+AYARLAR = ["akis", "akis_derleme", "akis_derleme_yarim"]   # sıra önemli: derleme geri alınamaz
 # Öfke bilgisi core/call.py'deki _psych_hint biçiminde; başındaki not müşteriye okunmasın diye
 NOT = "[Sistem notu, müşteriye okuma] Ses analizi: "
 KOSULLAR = {"yok": None,
@@ -196,6 +204,83 @@ def gecikme(o, audio: np.ndarray) -> dict:
             "konusucu_rtf": round(konusucu / ses, 2) if ses else None, "toplam": round(dusunur + konusucu, 2)}
 
 
+def speak_akis(tk, text: str, states, goffs, timesteps: int, seed: int = 42) -> tuple[np.ndarray, float, float]:
+    """tr_omni.Talker.speak'in akışlı kopyası: hazırlık aynı, ses her adımda VoxCPM2'nin akışlı VAE çözücüsüyle
+    parça parça çıkar. Döner: (ses, ilk parçanın süresi, toplam süre)."""
+    import torch
+    T = sys.modules["tr_omni"]
+    t0 = time.time()
+    ids, t2g = tk.align(text, goffs, states.shape[0])
+    seen, run = {}, {}
+    for g in t2g:
+        run[g] = run.get(g, 0) + 1
+    sub = []
+    for g in t2g:
+        sub.append(seen.get(g, 0))
+        seen[g] = seen.get(g, 0) + 1
+    npc = [run[g] for g in t2g]
+    with torch.inference_mode():
+        s = states.cuda()
+        pieces = tk.mapper(s[torch.tensor(t2g, device="cuda")], torch.tensor(sub, device="cuda"),
+                           torch.tensor(npc, device="cuda")).float()
+        m = tk.m
+        e = m.base_lm.embed_tokens.emb.weight[torch.tensor(ids, device="cuda")].float()
+        x = tk.fusion(e, pieces)
+        P, n, Ap = len(tk.prompt_ids), len(ids), tk.prompt_feat.shape[0]
+        L = P + n + 1 + Ap
+        toks = torch.zeros(1, L, dtype=torch.long, device="cuda")
+        toks[0, :P] = torch.tensor(tk.prompt_ids, device="cuda")
+        toks[0, P:P + n] = torch.tensor(ids, device="cuda")
+        toks[0, P + n] = T.AUDIO_START
+        feat = torch.zeros(1, L, 4, 64, device="cuda", dtype=torch.bfloat16)
+        feat[0, P + n + 1:] = tk.prompt_feat.to("cuda", torch.bfloat16)
+        am = torch.zeros(1, L, dtype=torch.int32, device="cuda")
+        am[0, P + n + 1:] = 1
+        mask = torch.zeros(1, L, device="cuda")
+        mask[0, P:P + n] = 1
+        full = torch.zeros(1, L, x.shape[-1], device="cuda")
+        full[0, P:P + n] = x
+        m.base_lm.embed_tokens.rep = (mask, full)
+        torch.manual_seed(seed)
+        parts, ilk = [], None
+        try:
+            gen = m._inference(toks, 1 - am, feat, am, min_len=2, max_len=min(n * 6 + 10, 2048),
+                               inference_timesteps=timesteps, cfg_value=tk.cfg["cfg_value"], streaming=True)
+            with m.audio_vae.streaming_decode() as dec:
+                for lat, _, _ in gen:
+                    parts.append(dec.decode_chunk(lat.to(torch.float32)).squeeze().float().cpu().numpy())
+                    if ilk is None:
+                        ilk = time.time() - t0
+        finally:
+            m.base_lm.embed_tokens.rep = None
+    wav = np.concatenate(parts) if parts else np.zeros(0, np.float32)
+    return wav, (ilk if ilk is not None else time.time() - t0), time.time() - t0
+
+
+def konusucu(o, audio: np.ndarray, cevap: str, timesteps: int) -> tuple[dict, np.ndarray]:
+    """Cevabı cümle cümle akışlı seslendirir (chat ile aynı bağlam). Döner: (ölçümler, ilk cümlenin sesi)."""
+    T = sys.modules["tr_omni"]
+    from tr_speak import speakable, split_sentences
+    system, _ = omni_turn(audio, None)
+    ctx = [system, {"role": "user", "content": [{"type": "audio", "audio": np.asarray(audio, np.float32)[-T.CTX_SEC * 16000:]}]}]
+    said, sure, ses, ilk, ilk_wav = [], 0.0, 0.0, None, None
+    for s in split_sentences(cevap):
+        t = speakable(s)
+        if not re.search(r"\w", t):
+            continue
+        t0 = time.time()
+        st, goffs = o.thinker.states(ctx, " ".join(said), t)
+        durum = time.time() - t0
+        wav, ilk_parca, toplam = speak_akis(o.talker, t, st, goffs, timesteps)
+        if ilk is None:
+            ilk, ilk_wav = durum + ilk_parca, wav
+        sure += durum + toplam
+        ses += len(wav) / o.sr
+        said.append(t)
+    return {"ilk_parca": round(ilk, 3) if ilk is not None else None, "konusucu": round(sure, 2),
+            "ses_suresi": round(ses, 2), "rtf": round(sure / ses, 3) if ses else None}, ilk_wav
+
+
 def enjeksiyon(o, audio: np.ndarray, text: str | None) -> tuple[str, str]:
     """Yalnızca metin cevap; ton etiketini (chat'te sabit '[ton: nötr]') bu kez model kendisi seçer."""
     system, content = omni_turn(audio, text)
@@ -294,6 +379,40 @@ def main():
                                           "sizinti": bool(SIZINTI.search(tr_lower(cevap)))})
                 print(f"omni_enjeksiyon {m['anahtar']} {k}: [{ton}] {cevap[:70]!r}", flush=True)
 
+    if "omni_konusucu" in a.bolum:
+        import torch
+        gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+        # aynı cümleler: omni_gecikme'deki cevaplar ve düşünürün ilk cümle süresi (önce bu GPU'nun satırları)
+        gec = {}
+        for r in sorted(R["omni_gecikme"].rows, key=lambda r: r["gpu"] == gpu):
+            gec[r["anahtar"].split("|", 1)[1]] = r
+        hedef = [m for m in musteri if m["anahtar"] in gec]
+        (out / "konusucu_ses").mkdir(exist_ok=True)
+        for ayar in AYARLAR:
+            kalan = [m for m in hedef if f"{gpu}|{ayar}|{m['anahtar']}" not in R["omni_konusucu"].done]
+            if not kalan:
+                continue
+            o = omni(a.model)
+            tm = o.talker.m
+            if ayar != "akis" and not hasattr(tm, "_feat_encoder_raw"):
+                tm.optimize()
+            derleme = hasattr(tm, "_feat_encoder_raw")
+            adim = o.talker.cfg["inference_timesteps"]
+            adim = max(1, adim // 2) if ayar.endswith("yarim") else adim
+            for m in kalan[:2]:                                # ısınma: derleme ve CUDA grafikleri ölçüme girmesin
+                konusucu(o, load16(m["wav"]), gec[m["anahtar"]]["cevap"], adim)
+            for i, m in enumerate(kalan):
+                g = gec[m["anahtar"]]
+                r, ilk_wav = konusucu(o, load16(m["wav"]), g["cevap"], adim)
+                if i < 5 and ilk_wav is not None:
+                    sf.write(out / "konusucu_ses" / f"{ayar}_{m['anahtar']}.wav", ilk_wav, o.sr)
+                ilk_ses = round(g["ilk_cumle"] + r["ilk_parca"], 2) if r["ilk_parca"] is not None else None
+                R["omni_konusucu"].add({"anahtar": f"{gpu}|{ayar}|{m['anahtar']}", "gpu": gpu, "ayar": ayar,
+                                        "derleme": derleme, "adim": adim, "ilk_cumle": g["ilk_cumle"],
+                                        "ilk_ses_tahmini": ilk_ses, **r})
+                print(f"omni_konusucu {gpu} {ayar} {m['anahtar']}: ilk parça {r['ilk_parca']} sn, "
+                      f"rtf {r['rtf']}, tahmini ilk ses {ilk_ses} sn", flush=True)
+
     ozet = {}
     rows = R["e2v_algi"].rows
     if rows:
@@ -349,6 +468,22 @@ def main():
                 "empati_orani": float(np.mean([r["empati"] for r in g])),
                 "sizinti": sum(r["sizinti"] for r in g),
                 "yok_ile_benzerlik": float(np.mean(benz)) if benz else None}
+    rows = R["omni_konusucu"].rows
+    if rows:
+        ozet["omni_konusucu"] = {}
+        for gpu in sorted({r["gpu"] for r in rows}):
+            ozet["omni_konusucu"][gpu] = {}
+            for ayar in AYARLAR:
+                g = [r for r in rows if r["gpu"] == gpu and r["ayar"] == ayar and r["ilk_ses_tahmini"] is not None]
+                if not g:
+                    continue
+                ilk = [r["ilk_ses_tahmini"] for r in g]
+                ozet["omni_konusucu"][gpu][ayar] = {
+                    "n": len(g), "derleme": g[0]["derleme"], "adim": g[0]["adim"],
+                    "ilk_parca_ort": float(np.mean([r["ilk_parca"] for r in g])),
+                    "ilk_ses_tahmini_ort": float(np.mean(ilk)), "ilk_ses_tahmini_medyan": float(np.median(ilk)),
+                    "rtf_ort": float(np.mean([r["rtf"] for r in g])),
+                    "rtf_max": float(np.max([r["rtf"] for r in g]))}
     json.dump(ozet, open(out / "ozet.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps(ozet, ensure_ascii=False, indent=1))
 

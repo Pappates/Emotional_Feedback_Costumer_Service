@@ -372,6 +372,10 @@ olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim
     1/20 cevapta bozuk kelime var.
   * Sonuç: öfke ayrı modelle (emotion2vec+) ölçülüp TR-Omni'ye metin olarak verilir. TR-Omni'ye duygu algısı
     öğretmek birinci öncelik değil. Asıl darboğaz gecikme; sıradaki ölçüm akışla ilk ses süresi ve A100 süresi.
+  * Gecikme dökümü (L4): düşünürün ilk cümlesi 2 sn, ama ilk ses ortalama 9,4 sn. Darboğaz konuşucu (VoxCPM2,
+    gerçek zaman oranı 1,65). Sıradaki deneme `omni_konusucu`: akışlı çözme, derleme, yarı difüzyon adımı.
+  * Enjeksiyon çalışıyor: öfkeli notta empati %40'tan %85'e çıkıyor, cevaplar kısalıyor.
+    Ayrıntı: `docs/sesten_sese_saha_arastirmasi.md` bölüm 7.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 

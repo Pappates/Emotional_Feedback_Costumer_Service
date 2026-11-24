@@ -27,5 +27,54 @@
   "cevap_sesi_duygu_dagilimi": {
    "neutral": 20
   }
+ },
+ "omni_gecikme": {
+  "NVIDIA L4": {
+   "n": 20,
+   "ilk_ses_ort": 9.374,
+   "ilk_ses_medyan": 8.655,
+   "ilk_ses_max": 23.55,
+   "ilk_token_ort": 0.219,
+   "ilk_cumle_ort": 1.958,
+   "konusucu_rtf_ort": 1.6475,
+   "toplam_ort": 24.5225
+  }
+ },
+ "omni_enjeksiyon": {
+  "yok": {
+   "n": 20,
+   "ton_dagilimi": {
+    "ciddi": 2,
+    "nötr": 3,
+    "sakin": 14,
+    "şefkatli": 1
+   },
+   "ort_kelime": 22.7,
+   "empati_orani": 0.4,
+   "sizinti": 0,
+   "yok_ile_benzerlik": 1.0
+  },
+  "sakin": {
+   "n": 20,
+   "ton_dagilimi": {
+    "ciddi": 1,
+    "nötr": 1,
+    "sakin": 18
+   },
+   "ort_kelime": 18.25,
+   "empati_orani": 0.65,
+   "sizinti": 0,
+   "yok_ile_benzerlik": 0.342
+  },
+  "ofkeli": {
+   "n": 20,
+   "ton_dagilimi": {
+    "sakin": 20
+   },
+   "ort_kelime": 17.0,
+   "empati_orani": 0.85,
+   "sizinti": 1,
+   "yok_ile_benzerlik": 0.287
+  }
  }
 }
