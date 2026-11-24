@@ -358,8 +358,8 @@ def main():
         import torch
         gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
         kalan = [m for m in musteri if f"{gpu}|{m['anahtar']}" not in R["omni_gecikme"].done]
-        if kalan:
-            gecikme(omni(a.model), load16(kalan[0]["wav"]))      # ısınma: derleme süresi ölçüme girmesin
+        for m in kalan[:2]:                                    # ısınma: derleme süresi ölçüme girmesin
+            gecikme(omni(a.model), load16(m["wav"]))           # (tek kayıtla ilk ölçüm yine ~18 sn çıktı)
         for m in kalan:
             r = gecikme(omni(a.model), load16(m["wav"]))
             R["omni_gecikme"].add({"anahtar": f"{gpu}|{m['anahtar']}", "gpu": gpu, **r})

@@ -76,5 +76,40 @@
    "sizinti": 1,
    "yok_ile_benzerlik": 0.287
   }
+ },
+ "omni_konusucu": {
+  "NVIDIA L4": {
+   "akis": {
+    "n": 20,
+    "derleme": false,
+    "adim": 16,
+    "ilk_parca_ort": 0.483,
+    "ilk_ses_tahmini_ort": 2.44,
+    "ilk_ses_tahmini_medyan": 1.605,
+    "rtf_ort": 1.736,
+    "rtf_max": 1.757
+   },
+   "akis_derleme": {
+    "n": 20,
+    "derleme": true,
+    "adim": 16,
+    "ilk_parca_ort": 0.309,
+    "ilk_ses_tahmini_ort": 2.268,
+    "ilk_ses_tahmini_medyan": 1.43,
+    "rtf_ort": 1.074,
+    "rtf_max": 1.088
+   },
+   "akis_derleme_yarim": {
+    "n": 20,
+    "derleme": true,
+    "adim": 8,
+    "ilk_parca_ort": 0.288,
+    "ilk_ses_tahmini_ort": 2.245,
+    "ilk_ses_tahmini_medyan": 1.395,
+    "rtf_ort": 0.954,
+    "rtf_max": 0.962
+   },
+   "not": "ilk_ses_tahmini_ort, omni_gecikme'deki ısınma hatası yüzünden ~18 sn çıkan tek kayıtla (ahmet_g0_t0_yok) şişik; o kayıt hariç ortalamalar 1,60 / 1,42 / 1,40 sn."
+  }
  }
 }

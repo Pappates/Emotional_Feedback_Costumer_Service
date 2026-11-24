@@ -152,6 +152,23 @@ Darboğaz konuşucu (VoxCPM2): bir cümleyi seslendirmek ~7 sn sürüyor. TR-Omn
 (`optimize=False`) ve akışsız (`streaming=False`) çağırıyor. Sıradaki deneme (`omni_konusucu`): akışlı çözme,
 derleme ve yarı difüzyon adımı. Bunlar yetmezse düşünür kalır, konuşucu daha hızlı bir Türkçe TTS ile değiştirilir.
 
+**Konuşucu hızlandırma (L4, n=20, `omni_konusucu`).** Aynı cevaplar, ses VoxCPM2'nin akışlı çözücüsüyle parça parça:
+
+| Ayar | İlk ses parçası | Tahmini ilk ses* | Gerçek zaman oranı |
+|---|---|---|---|
+| Akış yok (`omni_gecikme`) | — | 9,4 sn | 1,65 |
+| Akış | 0,48 sn | 1,60 sn | 1,74 |
+| Akış + derleme | 0,31 sn | 1,42 sn | 1,07 |
+| Akış + derleme + yarı difüzyon adımı (16 → 8) | 0,29 sn | 1,40 sn | 0,95 |
+
+\* Düşünürün ilk cümlesi + ilk ses parçası. Isınma hatası yüzünden ~18 sn çıkan tek kayıt hariç ortalama
+(ısınma sonradan iki kayda çıkarıldı).
+
+* İlk ses sorunu akışla çözülüyor: ~1,4 sn, hedef 1,5 sn. Kalan süre çoğunlukla düşünürün ilk cümlesi.
+* Akışın kesintisiz olması için oran < 1 gerekir. L4'te ancak derleme + yarı adımla (0,95) yetişiyor, pay yok;
+  gerçek görüşmede düşünür aynı GPU'da üretmeye devam edeceği için kesinti riski var. Yarı adımın ses kalitesi
+  dinlenerek değerlendirilmeli (`konusucu_ses/`). Sıradaki ölçüm A100.
+
 **Enjeksiyon (L4, 20 müşteri × 3 koşul, `omni_enjeksiyon`).** Öfke bilgisi kullanıcı turuna metin olarak
 verildi (`core/call.py` biçimi):
 
