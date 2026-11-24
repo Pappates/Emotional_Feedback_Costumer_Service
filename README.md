@@ -364,6 +364,14 @@ olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim
 * **Baseline** (`egitim/s2s_baseline.ipynb`, Colab L4/A100): eğitimden önce TR-Omni'nin TurEV'de duygu algısı, ElevenLabs
   müşteri tepkilerinde 0-4 öfke puanı ve sesli cevapları (süre, Türkçe yazım, cevap sesinin duygusu) ile emotion2vec+
   base'in aynı örneklemdeki hazır etiketi ölçülür. Betik: `egitim/s2s_baseline.py`; sonuçlar `ozet.json`.
+* **Baseline sonucu (24.11.2026, L4)** `egitim/sonuc_s2s_baseline.json`:
+  * emotion2vec+ base: 4 duygu UAR 0,775, "kızgın mı?" UAR 0,875.
+  * TR-Omni: 160 kaydın hepsine "sakin" dedi (4 duygu UAR 0,24, "kızgın mı?" 0,50, yani şans düzeyi).
+  * TR-Omni'nin öfke puanı ölçülen öfkeyle ilişkisiz (Spearman −0,32, n=20).
+  * TR-Omni'nin sesli cevabı ortalama 24 sn sürüyor (cevap sesi 13 sn, akış yok). Cevap sesinin tonu 20/20 nötr,
+    1/20 cevapta bozuk kelime var.
+  * Sonuç: öfke ayrı modelle (emotion2vec+) ölçülüp TR-Omni'ye metin olarak verilir. TR-Omni'ye duygu algısı
+    öğretmek birinci öncelik değil. Asıl darboğaz gecikme; sıradaki ölçüm akışla ilk ses süresi ve A100 süresi.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)
 

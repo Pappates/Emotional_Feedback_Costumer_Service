@@ -1,0 +1,31 @@
+{
+ "tarih": "2026-11-24",
+ "ortam": "Colab, NVIDIA L4 (22 GB), torch 2.14.1",
+ "e2v_algi": {
+  "n": 160,
+  "uar4": 0.775,
+  "kizgin_mi_uar": 0.875
+ },
+ "omni_algi": {
+  "n": 160,
+  "uar4": 0.24375,
+  "kizgin_mi_uar": 0.5,
+  "taninamayan_cevap": 0,
+  "ort_sure": 0.99
+ },
+ "omni_ofke": {
+  "n": 20,
+  "taninamayan_cevap": 0,
+  "spearman_olculen_ofke": -0.325,
+  "ort_mutlak_fark": 1.214
+ },
+ "omni_sohbet": {
+  "n": 20,
+  "ort_sure": 24.38,
+  "ort_ses_suresi": 12.97,
+  "bozuk_kelimeli_cevap": 1,
+  "cevap_sesi_duygu_dagilimi": {
+   "neutral": 20
+  }
+ }
+}

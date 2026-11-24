@@ -118,6 +118,28 @@ canlı kullanımda büyük olasılıkla kabul edilmez. Uzun vadede yerinde (on-p
 temel TR-Omni-E4B. Gerçek, etiketli Telekom kayıtlarıyla duygu ve öfke ince ayarı yapılır; tam dupleks daha
 sonra Moshi tarzı uyarlamayla gelir. Bu iş GPU gerektirir: çıkarım için 24 GB, eğitim için A100/H100 sınıfı.
 
+## 7. TR-Omni-E4B baseline ölçümü (24.11.2026)
+
+Eğitimsiz modeller, Colab L4. Betik ve defter: `egitim/s2s_baseline.py`, `egitim/s2s_baseline.ipynb`.
+Ham sonuç: `egitim/sonuc_s2s_baseline.json`.
+
+| Ölçüm | Sonuç | Şans |
+|---|---|---|
+| emotion2vec+ base, TurEV 4 duygu UAR (n=160) | 0,775 | 0,25 |
+| emotion2vec+ base, "kızgın mı?" UAR | 0,875 | 0,50 |
+| TR-Omni, TurEV 4 duygu UAR (sesle sorulunca) | 0,244 | 0,25 |
+| TR-Omni, "kızgın mı?" UAR | 0,50 | 0,50 |
+| TR-Omni 0-4 öfke puanı ile ölçülen öfke, Spearman (n=20) | −0,32 | 0 |
+| TR-Omni sesli cevap üretim süresi, ortalama (n=20) | 24,4 sn (ses 13 sn) | — |
+| Cevap sesinin tonu (emotion2vec+) | 20/20 nötr | — |
+
+* TR-Omni 160 kaydın hepsine "sakin" dedi. Soruyu anlıyor (tanınamayan cevap 0), ama sesteki duyguyu
+  kullanmıyor. Bu, 2. bölümdeki "duyuyor ama dinlemiyor" bulgusunun daha güçlü bir hâli.
+* Öfke ölçümü ayrı ses modeliyle (emotion2vec+) yapılır, sonuç TR-Omni'ye metin olarak verilir.
+* Cevap içeriği empatik ama kalıplı. 20 cevabın 1'inde konu kaymış, 1'inde bozuk kelime var.
+* En büyük engel gecikme: akış olmadan cevabın tamamı ortalama 24 sn, en uzun 63 sn. Sıradaki ölçüm: akışla
+  ilk ses süresi ve A100'de toplam süre.
+
 ## Kaynaklar
 
 * [Real-Time Voice AI Hears but Does Not Listen (arXiv 2606.26083)](https://arxiv.org/abs/2606.26083)
