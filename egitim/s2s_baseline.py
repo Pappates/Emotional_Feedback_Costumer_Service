@@ -19,6 +19,8 @@ Bölümler (her biri ayrı .jsonl dosyasına satır satır yazılır; Colab kopa
   omni_kalite Konuşucunun ses kalitesi: omni_gecikme cevaplarının bütün cümleleri KALITE ayarlarında seslendirilir,
               Whisper (large-v3-turbo) ile yazıya geri çevrilir, metinle karakter hata oranı (CER) hesaplanır.
               CER > BOZUK_CER olan cümle bozuk sayılır. Bütün sesler kalite_ses/<ayar>/ altında saklanır.
+  omni_mos    Kaydedilmiş seslerin (omni_kalite ve omni_konusucu) UTMOS ile tahmini dinleyici puanı (1-5). CER
+              sözlerin anlaşılırlığını ölçer; cızırtı, metalik ses gibi bozulmaları MOS yakalar.
   omni_konusucu Konuşucuyu (VoxCPM2) hızlandırma denemesi. omni_gecikme'deki cevaplar aynı cümlelerle farklı
               ayarlarda seslendirilir; hepsinde ses akışla (parça parça) çözülür:
                 akis             derleme kapalı (TR-Omni'nin varsayılanı), difüzyon adımı model ayarındaki kadar
@@ -66,7 +68,8 @@ PROMPT_DUYGU = ("Bu kaydı yalnızca ses tonuna göre değerlendir, sözlerin an
 PROMPT_OFKE = ("Bu müşterinin sesindeki ve sözlerindeki öfkeyi 0 ile 4 arasında puanla. 0 hiç öfkeli değil, "
                "4 çok öfkeli. Yalnızca tek bir rakam yaz.")
 BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_kalite",
-            "omni_konusucu"]
+            "omni_konusucu", "omni_mos"]
+DUSUK_MOS = 3.0   # UTMOS tahmini bunun altındaysa ses "düşük kaliteli" sayılır (1-5 ölçeği)
 # omni_kalite ayarları: (derleme, akış, difüzyon adımı: None = model ayarı, "yarim" = yarısı). Sıra önemli: derleme
 # geri alınamaz. akissiz = TR-Omni'nin kendi Talker.speak yolu. Aynı tohumla akışlı ve akışsız yol aynı gizli sesi
 # üretir; fark yalnızca ses çözücüde. Böylece bozulma çözücüden mi, derlemeden mi, modelden mi ayrılır.
@@ -382,6 +385,20 @@ def asr(x16: np.ndarray) -> str:
                 generate_kwargs={"language": "turkish", "task": "transcribe"})["text"].strip()
 
 
+_MOS = None
+
+
+def mos(x16: np.ndarray) -> float:
+    """UTMOS (VoiceMOS 2022 en iyi sistemi; referans ses istemez) ile tahmini dinleyici puanı, 1-5."""
+    global _MOS
+    import torch
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if _MOS is None:
+        _MOS = torch.hub.load("tarepan/SpeechMOS:v1.2.0", "utmos22_strong", trust_repo=True).to(dev).eval()
+    with torch.inference_mode():
+        return float(_MOS(torch.from_numpy(np.asarray(x16, np.float32)).unsqueeze(0).to(dev), 16000).item())
+
+
 def enjeksiyon(o, audio: np.ndarray, text: str | None) -> tuple[str, str]:
     """Yalnızca metin cevap; ton etiketini (chat'te sabit '[ton: nötr]') bu kez model kendisi seçer."""
     system, content = omni_turn(audio, text)
@@ -558,6 +575,25 @@ def main():
                 print(f"omni_konusucu {gpu} {ayar} {m['anahtar']}: ilk parça {r['ilk_parca']} sn, "
                       f"rtf {r['rtf']}, tahmini ilk ses {ilk_ses} sn", flush=True)
 
+    if "omni_mos" in a.bolum:
+        # kaydedilmiş seslerin UTMOS puanı: omni_kalite'nin bütün cümleleri ve omni_konusucu'nun ilk cümle örnekleri
+        # (ikincisi kulakla bozuk bulunan dosyaları içerir; puanın kulakla uyuşup uyuşmadığını gösterir)
+        hedefler = []
+        for r in R["omni_kalite"].rows:
+            hedefler += [("kalite", r["gpu"], r["ayar"], r["anahtar"].split("|")[2], c["wav"]) for c in r["cumleler"]]
+        for f in sorted((out / "konusucu_ses").glob("*.wav")):
+            m = re.match(r"^(.*)_([a-z]+_g\d+_t\d+_[a-z]+)$", f.stem)
+            if m:
+                hedefler.append(("konusucu", "", m.group(1), m.group(2), f"konusucu_ses/{f.name}"))
+        for kaynak, gpu, ayar, tepki, rel in hedefler:
+            if rel in R["omni_mos"].done:
+                continue
+            x, sr = sf.read(out / rel, dtype="float32")
+            x = x.mean(1) if x.ndim > 1 else x
+            R["omni_mos"].add({"anahtar": rel, "kaynak": kaynak, "gpu": gpu, "ayar": ayar, "tepki": tepki,
+                               "mos": round(mos(librosa.resample(x, orig_sr=sr, target_sr=16000)), 3)})
+        print(f"omni_mos: {len(R['omni_mos'].rows)} ses puanlandı", flush=True)
+
     ozet = {}
     rows = R["e2v_algi"].rows
     if rows:
@@ -646,6 +682,17 @@ def main():
                     "cumle": len(cs), "cer_ort": float(np.mean(c_)), "cer_medyan": float(np.median(c_)),
                     "bozuk": len(bozuk), "bozuk_orani": len(bozuk) / len(cs),
                     "bozuk_ornek": [c["wav"] for c in sorted(bozuk, key=lambda c: -c["cer"])[:3]]}
+    rows = R["omni_mos"].rows
+    if rows:
+        ozet["omni_mos"] = {}
+        for kaynak in ("kalite", "konusucu"):
+            for ayar in sorted({r["ayar"] for r in rows if r["kaynak"] == kaynak}):
+                g = [r for r in rows if r["kaynak"] == kaynak and r["ayar"] == ayar]
+                ms = [r["mos"] for r in g]
+                ozet["omni_mos"][f"{kaynak}/{ayar}"] = {
+                    "n": len(g), "mos_ort": float(np.mean(ms)), "mos_min": float(np.min(ms)),
+                    "dusuk": sum(m < DUSUK_MOS for m in ms),
+                    "en_dusuk": [r["anahtar"] for r in sorted(g, key=lambda r: r["mos"])[:3]]}
     json.dump(ozet, open(out / "ozet.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps(ozet, ensure_ascii=False, indent=1))
 
