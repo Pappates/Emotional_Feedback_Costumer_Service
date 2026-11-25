@@ -16,6 +16,9 @@ Bölümler (her biri ayrı .jsonl dosyasına satır satır yazılır; Colab kopa
   omni_enjeksiyon Aynı tepkiler, üç koşul: yok | sakin | ofkeli. Öfke bilgisi kullanıcı turuna metin olarak eklenir
               (core/call.py biçiminde). Cevap metni ve modelin kendi seçtiği ton etiketi karşılaştırılır: ton,
               kelime sayısı, empati/özür, bilginin müşteriye sızması, "yok" cevabına benzerlik.
+  omni_kalite Konuşucunun ses kalitesi: omni_gecikme cevaplarının bütün cümleleri KALITE ayarlarında seslendirilir,
+              Whisper (large-v3-turbo) ile yazıya geri çevrilir, metinle karakter hata oranı (CER) hesaplanır.
+              CER > BOZUK_CER olan cümle bozuk sayılır. Bütün sesler kalite_ses/<ayar>/ altında saklanır.
   omni_konusucu Konuşucuyu (VoxCPM2) hızlandırma denemesi. omni_gecikme'deki cevaplar aynı cümlelerle farklı
               ayarlarda seslendirilir; hepsinde ses akışla (parça parça) çözülür:
                 akis             derleme kapalı (TR-Omni'nin varsayılanı), difüzyon adımı model ayarındaki kadar
@@ -62,7 +65,14 @@ PROMPT_DUYGU = ("Bu kaydı yalnızca ses tonuna göre değerlendir, sözlerin an
                 "Yalnızca tek kelime yaz: kızgın, sakin, mutlu ya da üzgün.")
 PROMPT_OFKE = ("Bu müşterinin sesindeki ve sözlerindeki öfkeyi 0 ile 4 arasında puanla. 0 hiç öfkeli değil, "
                "4 çok öfkeli. Yalnızca tek bir rakam yaz.")
-BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_konusucu"]
+BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_kalite",
+            "omni_konusucu"]
+# omni_kalite ayarları: (derleme, akış, difüzyon adımı: None = model ayarı, "yarim" = yarısı). Sıra önemli: derleme
+# geri alınamaz. akissiz = TR-Omni'nin kendi Talker.speak yolu. Aynı tohumla akışlı ve akışsız yol aynı gizli sesi
+# üretir; fark yalnızca ses çözücüde. Böylece bozulma çözücüden mi, derlemeden mi, modelden mi ayrılır.
+KALITE = {"akissiz": (False, False, None), "akis": (False, True, None), "akissiz_derleme": (True, False, None),
+          "akis_derleme": (True, True, None), "akis_derleme_yarim": (True, True, "yarim")}
+BOZUK_CER = 0.3   # Whisper dökümü ile metin arasında karakter hata oranı bunun üstündeyse cümle "bozuk" sayılır
 # ayar: (derleme, difüzyon adımı: None = model ayarı, "yarim" = yarısı, sayı = o kadar, arka planda düşünür yükü)
 # sıra önemli: derleme geri alınamaz
 AYARLAR = {"akis": (False, None, False), "akis_derleme": (True, None, False), "akis_derleme_yarim": (True, "yarim", False),
@@ -321,6 +331,57 @@ def konusucu(o, audio: np.ndarray, cevap: str, timesteps: int, yuk: bool = False
     return r, ilk_wav
 
 
+def kalite_sentez(o, audio: np.ndarray, cevap: str, akis: bool, timesteps: int) -> list[tuple[str, np.ndarray, float]]:
+    """Cevabın her cümlesini (chat ile aynı bağlam) seslendirir. Döner: [(okunan metin, ses, süre)]."""
+    T = sys.modules["tr_omni"]
+    from tr_speak import speakable, split_sentences
+    system, _ = omni_turn(audio, None)
+    ctx = [system, {"role": "user", "content": [{"type": "audio", "audio": np.asarray(audio, np.float32)[-T.CTX_SEC * 16000:]}]}]
+    said, out = [], []
+    for s in split_sentences(cevap):
+        t = speakable(s)
+        if not re.search(r"\w", t):
+            continue
+        t0 = time.time()
+        st, goffs = o.thinker.states(ctx, " ".join(said), t)
+        wav = speak_akis(o.talker, t, st, goffs, timesteps)[0] if akis else o.talker.speak(t, st, goffs)
+        out.append((t, np.asarray(wav, np.float32), time.time() - t0))
+        said.append(t)
+    return out
+
+
+def norm_metin(s: str) -> str:
+    from tr_speak import speakable           # Whisper rakam yazabilir ("4 saat"); metin gibi okunuşa çevrilir
+    return " ".join(re.sub(r"[^\w\s]", " ", tr_lower(speakable(s))).split())
+
+
+def cer(ref: str, hyp: str) -> float:
+    a, b = norm_metin(ref), norm_metin(hyp)
+    if not a:
+        return 0.0 if not b else 1.0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1] / len(a)
+
+
+_ASR = None
+
+
+def asr(x16: np.ndarray) -> str:
+    global _ASR
+    if _ASR is None:
+        import torch
+        from transformers import pipeline
+        _ASR = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo",
+                        dtype=torch.float16, device="cuda" if torch.cuda.is_available() else "cpu")
+    return _ASR({"raw": x16, "sampling_rate": 16000},
+                generate_kwargs={"language": "turkish", "task": "transcribe"})["text"].strip()
+
+
 def enjeksiyon(o, audio: np.ndarray, text: str | None) -> tuple[str, str]:
     """Yalnızca metin cevap; ton etiketini (chat'te sabit '[ton: nötr]') bu kez model kendisi seçer."""
     system, content = omni_turn(audio, text)
@@ -419,6 +480,46 @@ def main():
                                           "sizinti": bool(SIZINTI.search(tr_lower(cevap)))})
                 print(f"omni_enjeksiyon {m['anahtar']} {k}: [{ton}] {cevap[:70]!r}", flush=True)
 
+    if "omni_kalite" in a.bolum:
+        import torch
+        gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+        gec = {}
+        for r in sorted(R["omni_gecikme"].rows, key=lambda r: r["gpu"] == gpu):
+            gec[r["anahtar"].split("|", 1)[1]] = r
+        hedef = [m for m in musteri if m["anahtar"] in gec]
+        for ayar, (derle, akis, adim) in KALITE.items():
+            kalan = [m for m in hedef if f"{gpu}|{ayar}|{m['anahtar']}" not in R["omni_kalite"].done]
+            if not kalan:
+                continue
+            o = omni(a.model)
+            tm = o.talker.m
+            if not derle and hasattr(tm, "_feat_encoder_raw"):
+                print(f"omni_kalite {ayar} atlandı: derleme bu süreçte açıldı. Yeni süreçte --bolum omni_kalite ile "
+                      f"çalıştırın.", flush=True)
+                continue
+            if derle and not hasattr(tm, "_feat_encoder_raw"):
+                tm.optimize()
+                for m in hedef[:2]:                            # ısınma: derleme süresi ölçüme girmesin
+                    kalite_sentez(o, load16(m["wav"]), gec[m["anahtar"]]["cevap"], True, 8)
+            varsayilan = o.talker.cfg["inference_timesteps"]
+            adim = varsayilan if adim is None else max(1, varsayilan // 2)
+            (out / "kalite_ses" / ayar).mkdir(parents=True, exist_ok=True)
+            for m in kalan:
+                cumleler = []
+                for i, (t, wav, sure) in enumerate(kalite_sentez(o, load16(m["wav"]), gec[m["anahtar"]]["cevap"], akis, adim)):
+                    rel = f"kalite_ses/{ayar}/{m['anahtar']}_{i}.wav"
+                    sf.write(out / rel, wav, o.sr, subtype="PCM_16")
+                    duyulan = asr(librosa.resample(wav, orig_sr=o.sr, target_sr=16000)) if len(wav) else ""
+                    cumleler.append({"metin": t, "duyulan": duyulan, "cer": round(cer(t, duyulan), 3),
+                                     "ses_suresi": round(len(wav) / o.sr, 2), "sure": round(sure, 2), "wav": rel})
+                R["omni_kalite"].add({"anahtar": f"{gpu}|{ayar}|{m['anahtar']}", "gpu": gpu, "ayar": ayar,
+                                      "derleme": hasattr(tm, "_feat_encoder_raw"), "akis": akis, "adim": adim,
+                                      "cumleler": cumleler})
+                bozuk = [c for c in cumleler if c["cer"] > BOZUK_CER]
+                print(f"omni_kalite {gpu} {ayar} {m['anahtar']}: {len(cumleler)} cümle, bozuk {len(bozuk)}"
+                      + (f" -> {bozuk[0]['metin'][:40]!r} duyulan {bozuk[0]['duyulan'][:40]!r}" if bozuk else ""),
+                      flush=True)
+
     if "omni_konusucu" in a.bolum:
         import torch
         gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
@@ -434,6 +535,10 @@ def main():
                 continue
             o = omni(a.model)
             tm = o.talker.m
+            if not derle and hasattr(tm, "_feat_encoder_raw"):
+                print(f"omni_konusucu {ayar} atlandı: derleme bu süreçte açıldı. Yeni süreçte --bolum omni_konusucu "
+                      f"ile çalıştırın.", flush=True)
+                continue
             if derle and not hasattr(tm, "_feat_encoder_raw"):
                 tm.optimize()
             derleme = hasattr(tm, "_feat_encoder_raw")
@@ -526,6 +631,21 @@ def main():
                     "rtf_max": float(np.max([r["rtf"] for r in g]))}
                 if "arka_token_hizi" in g[0]:
                     ozet["omni_konusucu"][gpu][ayar]["arka_token_hizi_ort"] = float(np.mean([r["arka_token_hizi"] for r in g]))
+    rows = R["omni_kalite"].rows
+    if rows:
+        ozet["omni_kalite"] = {}
+        for gpu in sorted({r["gpu"] for r in rows}):
+            ozet["omni_kalite"][gpu] = {}
+            for ayar in KALITE:
+                cs = [c for r in rows if r["gpu"] == gpu and r["ayar"] == ayar for c in r["cumleler"]]
+                if not cs:
+                    continue
+                c_ = [c["cer"] for c in cs]
+                bozuk = [c for c in cs if c["cer"] > BOZUK_CER]
+                ozet["omni_kalite"][gpu][ayar] = {
+                    "cumle": len(cs), "cer_ort": float(np.mean(c_)), "cer_medyan": float(np.median(c_)),
+                    "bozuk": len(bozuk), "bozuk_orani": len(bozuk) / len(cs),
+                    "bozuk_ornek": [c["wav"] for c in sorted(bozuk, key=lambda c: -c["cer"])[:3]]}
     json.dump(ozet, open(out / "ozet.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps(ozet, ensure_ascii=False, indent=1))
 
