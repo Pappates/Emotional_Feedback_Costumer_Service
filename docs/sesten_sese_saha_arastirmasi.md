@@ -160,14 +160,21 @@ derleme ve yarı difüzyon adımı. Bunlar yetmezse düşünür kalır, konuşuc
 | Akış | 0,48 sn | 1,60 sn | 1,74 |
 | Akış + derleme | 0,31 sn | 1,42 sn | 1,07 |
 | Akış + derleme + yarı difüzyon adımı (16 → 8) | 0,29 sn | 1,40 sn | 0,95 |
+| Akış + derleme, 6 adım | 0,28 sn | 1,39 sn (medyan) | 0,93 |
+| Akış + derleme, 4 adım | 0,27 sn | 1,40 sn (medyan) | 0,90 |
+| Akış + derleme, 8 adım, **düşünür aynı GPU'da çalışırken** | 0,48 sn | 1,58 sn (medyan) | **1,11** |
 
 \* Düşünürün ilk cümlesi + ilk ses parçası. Isınma hatası yüzünden ~18 sn çıkan tek kayıt hariç ortalama
 (ısınma sonradan iki kayda çıkarıldı).
 
 * İlk ses sorunu akışla çözülüyor: ~1,4 sn, hedef 1,5 sn. Kalan süre çoğunlukla düşünürün ilk cümlesi.
-* Akışın kesintisiz olması için oran < 1 gerekir. L4'te ancak derleme + yarı adımla (0,95) yetişiyor, pay yok;
-  gerçek görüşmede düşünür aynı GPU'da üretmeye devam edeceği için kesinti riski var. Yarı adımın ses kalitesi
-  dinlenerek değerlendirilmeli (`konusucu_ses/`). Sıradaki ölçüm A100.
+* Akışın kesintisiz olması için oran < 1 gerekir. Difüzyon adımı darboğaz değil: 16 → 4 adımda oran yalnızca
+  1,07 → 0,90. Süre çoğunlukla konuşucunun dil modeli adımlarında ve ses çözücüde.
+* GPU paylaşımı belirleyici: düşünür arka planda üretirken konuşucunun oranı 0,95 → 1,11 (ses kesilir), düşünür de
+  saniyede ~4 token'a düşüyor. (Arka plan üretimi derlemesiz yoldan yapıldı; kaba bir tahmin, ama yön açık.)
+* Sonuç: tek L4'te TR-Omni'nin düşünürü ve konuşucusu aynı anda canlı akışa yetişmiyor. Seçenekler: önce düşünür
+  sonra konuşucu (ilk ses ~3 sn), iki GPU, ya da düşünür kalıp konuşucunun daha hızlı akışlı bir Türkçe TTS ile
+  değiştirilmesi. Düşük adımların ses kalitesi dinlenerek değerlendirilmeli (`konusucu_ses/`).
 
 **Enjeksiyon (L4, 20 müşteri × 3 koşul, `omni_enjeksiyon`).** Öfke bilgisi kullanıcı turuna metin olarak
 verildi (`core/call.py` biçimi):

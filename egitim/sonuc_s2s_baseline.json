@@ -109,7 +109,38 @@
     "rtf_ort": 0.954,
     "rtf_max": 0.962
    },
-   "not": "ilk_ses_tahmini_ort, omni_gecikme'deki ısınma hatası yüzünden ~18 sn çıkan tek kayıtla (ahmet_g0_t0_yok) şişik; o kayıt hariç ortalamalar 1,60 / 1,42 / 1,40 sn."
+   "not": "ilk_ses_tahmini_ort, omni_gecikme'deki ısınma hatası yüzünden ~18 sn çıkan tek kayıtla (ahmet_g0_t0_yok) şişik; medyanlar etkilenmiyor.",
+   "akis_derleme_6": {
+    "n": 20,
+    "derleme": true,
+    "adim": 6,
+    "ilk_parca_ort": 0.282,
+    "ilk_ses_tahmini_ort": 2.24,
+    "ilk_ses_tahmini_medyan": 1.39,
+    "rtf_ort": 0.929,
+    "rtf_max": 0.941
+   },
+   "akis_derleme_4": {
+    "n": 20,
+    "derleme": true,
+    "adim": 4,
+    "ilk_parca_ort": 0.274,
+    "ilk_ses_tahmini_ort": 2.233,
+    "ilk_ses_tahmini_medyan": 1.395,
+    "rtf_ort": 0.9,
+    "rtf_max": 0.911
+   },
+   "akis_derleme_yarim_yuk": {
+    "n": 20,
+    "derleme": true,
+    "adim": 8,
+    "ilk_parca_ort": 0.485,
+    "ilk_ses_tahmini_ort": 2.443,
+    "ilk_ses_tahmini_medyan": 1.58,
+    "rtf_ort": 1.113,
+    "rtf_max": 1.144,
+    "arka_token_hizi_ort": 4.09
+   }
   }
  }
 }
