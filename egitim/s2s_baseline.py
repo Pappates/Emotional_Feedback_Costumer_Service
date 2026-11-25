@@ -16,11 +16,15 @@ Bölümler (her biri ayrı .jsonl dosyasına satır satır yazılır; Colab kopa
   omni_enjeksiyon Aynı tepkiler, üç koşul: yok | sakin | ofkeli. Öfke bilgisi kullanıcı turuna metin olarak eklenir
               (core/call.py biçiminde). Cevap metni ve modelin kendi seçtiği ton etiketi karşılaştırılır: ton,
               kelime sayısı, empati/özür, bilginin müşteriye sızması, "yok" cevabına benzerlik.
-  omni_konusucu Konuşucuyu (VoxCPM2) hızlandırma denemesi. omni_gecikme'deki cevaplar aynı cümlelerle üç ayarda
-              seslendirilir; hepsinde ses akışla (parça parça) çözülür:
+  omni_konusucu Konuşucuyu (VoxCPM2) hızlandırma denemesi. omni_gecikme'deki cevaplar aynı cümlelerle farklı
+              ayarlarda seslendirilir; hepsinde ses akışla (parça parça) çözülür:
                 akis             derleme kapalı (TR-Omni'nin varsayılanı), difüzyon adımı model ayarındaki kadar
                 akis_derleme     + torch.compile (VoxCPM2'nin kendi optimize() yolu)
                 akis_derleme_yarim + difüzyon adımı yarıya iner (kalite düşebilir; sesler dinlemek için saklanır)
+                akis_derleme_6 / akis_derleme_4  difüzyon adımı 6 / 4
+                akis_derleme_yarim_yuk  yarı adım, ama seslendirme sırasında arka planda düşünür de metin üretir
+                                 (gerçek görüşmede düşünür konuşucuyla aynı GPU'yu paylaşır). Arka plan üretimi
+                                 derlemesiz yoldan yapılır: hızlı yolun CUDA grafikleri ana iş parçacığına bağlı.
               Ölçülen: ilk ses parçasının süresi, gerçek zaman oranı, tahmini ilk ses
               (düşünürün ilk cümlesi + durumlar + ilk parça).
 
@@ -59,7 +63,11 @@ PROMPT_DUYGU = ("Bu kaydı yalnızca ses tonuna göre değerlendir, sözlerin an
 PROMPT_OFKE = ("Bu müşterinin sesindeki ve sözlerindeki öfkeyi 0 ile 4 arasında puanla. 0 hiç öfkeli değil, "
                "4 çok öfkeli. Yalnızca tek bir rakam yaz.")
 BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_konusucu"]
-AYARLAR = ["akis", "akis_derleme", "akis_derleme_yarim"]   # sıra önemli: derleme geri alınamaz
+# ayar: (derleme, difüzyon adımı: None = model ayarı, "yarim" = yarısı, sayı = o kadar, arka planda düşünür yükü)
+# sıra önemli: derleme geri alınamaz
+AYARLAR = {"akis": (False, None, False), "akis_derleme": (True, None, False), "akis_derleme_yarim": (True, "yarim", False),
+           "akis_derleme_6": (True, 6, False), "akis_derleme_4": (True, 4, False),
+           "akis_derleme_yarim_yuk": (True, "yarim", True)}
 # Öfke bilgisi core/call.py'deki _psych_hint biçiminde; başındaki not müşteriye okunmasın diye
 NOT = "[Sistem notu, müşteriye okuma] Ses analizi: "
 KOSULLAR = {"yok": None,
@@ -257,13 +265,42 @@ def speak_akis(tk, text: str, states, goffs, timesteps: int, seed: int = 42) -> 
     return wav, (ilk if ilk is not None else time.time() - t0), time.time() - t0
 
 
-def konusucu(o, audio: np.ndarray, cevap: str, timesteps: int) -> tuple[dict, np.ndarray]:
-    """Cevabı cümle cümle akışlı seslendirir (chat ile aynı bağlam). Döner: (ölçümler, ilk cümlenin sesi)."""
+class DusunurYuku:
+    """Arka planda düşünüre aynı müşteri sesiyle sürekli kısa cevap ürettirir (derlemesiz generate)."""
+
+    def __init__(self, o, audio: np.ndarray):
+        import threading
+        T = sys.modules["tr_omni"]
+        system, content = omni_turn(audio, None)
+        self.o, self.x = o, o.thinker._inputs([system, {"role": "user", "content": content}], T.TONE)
+        self.dur, self.token, self.t0 = threading.Event(), 0, time.time()
+        self.th = threading.Thread(target=self._calis, daemon=True)
+        self.th.start()
+
+    def _calis(self):
+        import torch
+        n = self.x["input_ids"].shape[1]
+        with torch.inference_mode():               # grad modu iş parçacığına özel
+            while not self.dur.is_set():
+                out = self.o.thinker.model.generate(**self.x, max_new_tokens=32, do_sample=False)
+                self.token += out.shape[1] - n
+
+    def bitir(self) -> float:
+        """Durdurur; arka planda saniyede üretilen token."""
+        self.dur.set()
+        self.th.join()
+        return self.token / (time.time() - self.t0)
+
+
+def konusucu(o, audio: np.ndarray, cevap: str, timesteps: int, yuk: bool = False) -> tuple[dict, np.ndarray]:
+    """Cevabı cümle cümle akışlı seslendirir (chat ile aynı bağlam). Döner: (ölçümler, ilk cümlenin sesi).
+    yuk: seslendirme boyunca arka planda düşünür de çalışır."""
     T = sys.modules["tr_omni"]
     from tr_speak import speakable, split_sentences
     system, _ = omni_turn(audio, None)
     ctx = [system, {"role": "user", "content": [{"type": "audio", "audio": np.asarray(audio, np.float32)[-T.CTX_SEC * 16000:]}]}]
     said, sure, ses, ilk, ilk_wav = [], 0.0, 0.0, None, None
+    arka = DusunurYuku(o, audio) if yuk else None
     for s in split_sentences(cevap):
         t = speakable(s)
         if not re.search(r"\w", t):
@@ -277,8 +314,11 @@ def konusucu(o, audio: np.ndarray, cevap: str, timesteps: int) -> tuple[dict, np
         sure += durum + toplam
         ses += len(wav) / o.sr
         said.append(t)
-    return {"ilk_parca": round(ilk, 3) if ilk is not None else None, "konusucu": round(sure, 2),
-            "ses_suresi": round(ses, 2), "rtf": round(sure / ses, 3) if ses else None}, ilk_wav
+    r = {"ilk_parca": round(ilk, 3) if ilk is not None else None, "konusucu": round(sure, 2),
+         "ses_suresi": round(ses, 2), "rtf": round(sure / ses, 3) if ses else None}
+    if arka is not None:
+        r["arka_token_hizi"] = round(arka.bitir(), 1)
+    return r, ilk_wav
 
 
 def enjeksiyon(o, audio: np.ndarray, text: str | None) -> tuple[str, str]:
@@ -388,22 +428,22 @@ def main():
             gec[r["anahtar"].split("|", 1)[1]] = r
         hedef = [m for m in musteri if m["anahtar"] in gec]
         (out / "konusucu_ses").mkdir(exist_ok=True)
-        for ayar in AYARLAR:
+        for ayar, (derle, adim, yuk) in AYARLAR.items():
             kalan = [m for m in hedef if f"{gpu}|{ayar}|{m['anahtar']}" not in R["omni_konusucu"].done]
             if not kalan:
                 continue
             o = omni(a.model)
             tm = o.talker.m
-            if ayar != "akis" and not hasattr(tm, "_feat_encoder_raw"):
+            if derle and not hasattr(tm, "_feat_encoder_raw"):
                 tm.optimize()
             derleme = hasattr(tm, "_feat_encoder_raw")
-            adim = o.talker.cfg["inference_timesteps"]
-            adim = max(1, adim // 2) if ayar.endswith("yarim") else adim
+            varsayilan = o.talker.cfg["inference_timesteps"]
+            adim = varsayilan if adim is None else max(1, varsayilan // 2) if adim == "yarim" else adim
             for m in kalan[:2]:                                # ısınma: derleme ve CUDA grafikleri ölçüme girmesin
-                konusucu(o, load16(m["wav"]), gec[m["anahtar"]]["cevap"], adim)
+                konusucu(o, load16(m["wav"]), gec[m["anahtar"]]["cevap"], adim, yuk)
             for i, m in enumerate(kalan):
                 g = gec[m["anahtar"]]
-                r, ilk_wav = konusucu(o, load16(m["wav"]), g["cevap"], adim)
+                r, ilk_wav = konusucu(o, load16(m["wav"]), g["cevap"], adim, yuk)
                 if i < 5 and ilk_wav is not None:
                     sf.write(out / "konusucu_ses" / f"{ayar}_{m['anahtar']}.wav", ilk_wav, o.sr)
                 ilk_ses = round(g["ilk_cumle"] + r["ilk_parca"], 2) if r["ilk_parca"] is not None else None
@@ -484,6 +524,8 @@ def main():
                     "ilk_ses_tahmini_ort": float(np.mean(ilk)), "ilk_ses_tahmini_medyan": float(np.median(ilk)),
                     "rtf_ort": float(np.mean([r["rtf"] for r in g])),
                     "rtf_max": float(np.max([r["rtf"] for r in g]))}
+                if "arka_token_hizi" in g[0]:
+                    ozet["omni_konusucu"][gpu][ayar]["arka_token_hizi_ort"] = float(np.mean([r["arka_token_hizi"] for r in g]))
     json.dump(ozet, open(out / "ozet.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps(ozet, ensure_ascii=False, indent=1))
 
