@@ -142,5 +142,97 @@
     "arka_token_hizi_ort": 4.09
    }
   }
+ },
+ "omni_kalite": {
+  "NVIDIA L4": {
+   "akissiz": {
+    "n_cumle": 45,
+    "bozuk_cer_gt_0.3": 0,
+    "cer_ort_max": 0.003
+   },
+   "akis": {
+    "n_cumle": 45,
+    "bozuk_cer_gt_0.3": 0,
+    "cer_ort_max": 0.003
+   },
+   "akissiz_derleme": {
+    "n_cumle": 45,
+    "bozuk_cer_gt_0.3": 0,
+    "cer_ort_max": 0.003
+   },
+   "akis_derleme": {
+    "n_cumle": 45,
+    "bozuk_cer_gt_0.3": 0,
+    "cer_ort_max": 0.003
+   },
+   "akis_derleme_yarim": {
+    "n_cumle": 45,
+    "bozuk_cer_gt_0.3": 0,
+    "cer_ort_max": 0.003
+   }
+  },
+  "not": "Whisper large-v3-turbo ile geri yazım; rakamlar speakable ile normalize. Kullanıcının kulakla bozuk bulduğu dört dosya da kusursuz yazıya döküldü."
+ },
+ "omni_mos": {
+  "NVIDIA L4": {
+   "kalite": {
+    "akissiz": {
+     "mos_ort": 3.71,
+     "mos_min": 3.01,
+     "alti_3": 0
+    },
+    "akis": {
+     "mos_ort": 3.71,
+     "mos_min": 3.01,
+     "alti_3": 0
+    },
+    "akissiz_derleme": {
+     "mos_ort": 3.77,
+     "mos_min": 3.26,
+     "alti_3": 0
+    },
+    "akis_derleme": {
+     "mos_ort": 3.77,
+     "mos_min": 3.26,
+     "alti_3": 0
+    },
+    "akis_derleme_yarim": {
+     "mos_ort": 3.68,
+     "mos_min": 3.07,
+     "alti_3": 0
+    }
+   },
+   "konusucu_ilk_cumle_n5": {
+    "akis": {
+     "mos_ort": 3.85,
+     "alti_3": 0
+    },
+    "akis_derleme": {
+     "mos_ort": 3.88,
+     "alti_3": 0
+    },
+    "akis_derleme_yarim": {
+     "mos_ort": 3.78,
+     "alti_3": 0
+    },
+    "akis_derleme_6": {
+     "mos_ort": 3.61,
+     "alti_3": 0
+    },
+    "akis_derleme_4": {
+     "mos_ort": 2.83,
+     "alti_3": 3
+    }
+   },
+   "kulak_karsilastirma": {
+    "akis_derleme_4/ahmet_g0_t0_neden": 2.42,
+    "akis_derleme_4/ahmet_g0_t0_ofke": 2.35,
+    "akis_derleme_4/ahmet_g0_t0_tam": 3.41,
+    "akis_derleme_6/ahmet_g0_t0_ofke": 3.37,
+    "akis_derleme_yarim/ahmet_g0_t0_ofke": 3.48,
+    "akis_derleme/ahmet_g0_t0_tam": 4.12
+   }
+  },
+  "not": "UTMOS (utmos22_strong, 1-5) İngilizce konuşmayla eğitilmiş; mutlak değerler Türkçede kaba, ayarlar arası kıyas güvenilir."
  }
 }

@@ -377,6 +377,8 @@ olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim
   * Konuşucu akışla çalışınca ilk ses ~1,4 sn'ye iniyor. Ama tek L4'te düşünür aynı anda çalışırken konuşucu gerçek
     zamana yetişmiyor (oran 1,11); difüzyon adımını azaltmak az kazandırıyor (4 adımda 0,90). Seçenekler: önce
     düşünür sonra konuşucu, iki GPU, ya da daha hızlı bir Türkçe TTS.
+  * Ses kalitesi: akış ve derleme sesi bozmuyor (UTMOS 3,71-3,77, Whisper ile 45 cümlenin hiçbiri bozuk değil).
+    8 difüzyon adımı çok az düşürüyor (3,68), 4 adım belirgin bozuyor (2,83). Önerilen: akış + derleme + 8 adım.
   * Enjeksiyon çalışıyor: öfkeli notta empati %40'tan %85'e çıkıyor, cevaplar kısalıyor.
     Ayrıntı: `docs/sesten_sese_saha_arastirmasi.md` bölüm 7.
 

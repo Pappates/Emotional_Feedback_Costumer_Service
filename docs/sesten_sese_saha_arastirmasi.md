@@ -174,7 +174,27 @@ derleme ve yarı difüzyon adımı. Bunlar yetmezse düşünür kalır, konuşuc
   saniyede ~4 token'a düşüyor. (Arka plan üretimi derlemesiz yoldan yapıldı; kaba bir tahmin, ama yön açık.)
 * Sonuç: tek L4'te TR-Omni'nin düşünürü ve konuşucusu aynı anda canlı akışa yetişmiyor. Seçenekler: önce düşünür
   sonra konuşucu (ilk ses ~3 sn), iki GPU, ya da düşünür kalıp konuşucunun daha hızlı akışlı bir Türkçe TTS ile
-  değiştirilmesi. Düşük adımların ses kalitesi dinlenerek değerlendirilmeli (`konusucu_ses/`).
+  değiştirilmesi.
+
+**Ses kalitesi (L4, `omni_kalite` + `omni_mos`).** Her ayarda aynı 45 cümle sentezlendi. Anlaşılırlık Whisper
+large-v3-turbo ile geri yazımın karakter hata oranıyla (CER), doğallık UTMOS ile (1-5, referanssız) ölçüldü:
+
+| Ayar | Bozuk cümle (CER > 0,3) | UTMOS ort. | En düşük | < 3,0 |
+|---|---|---|---|---|
+| Akışsız (TR-Omni'nin kendi yolu) | 0/45 | 3,71 | 3,01 | 0 |
+| Akış | 0/45 | 3,71 | 3,01 | 0 |
+| Akışsız + derleme | 0/45 | 3,77 | 3,26 | 0 |
+| Akış + derleme | 0/45 | 3,77 | 3,26 | 0 |
+| Akış + derleme, 8 adım | 0/45 | 3,68 | 3,07 | 0 |
+
+Hız ölçümündeki ilk cümleler (ayar başına 5) ayrıca puanlandı: 16 adım 3,88, 8 adım 3,78, 6 adım 3,61,
+**4 adım 2,83 (5 örneğin 3'ü 3,0'ın altında)**.
+
+* Akış ve derleme sesi bozmuyor; 8 adım çok az düşürüyor (3,77 → 3,68), sözler her ayarda anlaşılır.
+* 4 adım belirgin bozuyor, 6 adım sınırda; hızları 8 adımdan pek farklı olmadığı için ikisi de elendi.
+  Kulakla bozuk bulunan örneklerin çoğu düşük puan aldı (4 adım "neden" 2,42; 6 adım "öfke" 3,37).
+* Önerilen ayar: akış + derleme + 8 adım. Hız sorunu (GPU paylaşımında oran 1,11) bununla çözülmüyor.
+* UTMOS İngilizce konuşmayla eğitilmiş; Türkçede mutlak puan kaba, ayarlar arası kıyas güvenilir.
 
 **Enjeksiyon (L4, 20 müşteri × 3 koşul, `omni_enjeksiyon`).** Öfke bilgisi kullanıcı turuna metin olarak
 verildi (`core/call.py` biçimi):
