@@ -278,5 +278,25 @@
    }
   },
   "not": "Önce düşünür cevabın tamamını üretir, sonra konuşucu akış + derleme + 8 adımla seslendirir; GPU paylaşılmaz. Ölçüm 26.11.2026."
+ },
+ "omni_demo": {
+  "NVIDIA L4": {
+   "n": 20,
+   "ofke_ort": 1.226,
+   "ofke_spearman": 0.817,
+   "asr_ort": 0.379,
+   "e2v_ort": 0.028,
+   "dusunur_ort": 1.873,
+   "ilk_ses_ort": 2.125,
+   "toplam_ilk_ses_ort": 2.531,
+   "toplam_ilk_ses_medyan": 2.44,
+   "toplam_ilk_ses_max": 2.96,
+   "rtf_ort": 0.96,
+   "takilmali": 0,
+   "kelime_ort": 14.55,
+   "empati_orani": 0.55,
+   "sizinti": 0
+  },
+  "not": "Uçtan uca tur: Whisper large-v3-turbo + emotion2vec+ ile canlı öfke ölçümü (core/psych.anger_score), not + kısa cevap talimatı, önce düşünür sonra konuşucu (akış + derleme + 8 adım). toplam_ilk_ses = ses tanıma + öfke ölçümü + ilk ses; sessizlik algısı hariç. Ölçüm 26.11.2026. Sesler: demo/omni_demo/."
  }
 }

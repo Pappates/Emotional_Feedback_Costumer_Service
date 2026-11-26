@@ -227,6 +227,38 @@ verildi (`core/call.py` biçimi):
 * Tek sızıntı sınırda: "sizi ne kadar öfkelendirdiğini hissedebiliyorum". Kızgın müşteriye öfkesini söylemek riskli.
 * Ton etiketi bilgi taşımıyor (neredeyse hep "sakin"); konuşucu da etiketi kullanmıyor.
 
+**Uçtan uca demo (L4, 20 müşteri tepkisi, `omni_demo`, 26.11.2026).** Müşteri sesi Whisper large-v3-turbo ile
+yazıya, emotion2vec+ ile öfke puanına (`core/psych.anger_score`, 0-4) çevrilir; puan kullanıcı turuna not olarak
+eklenir, 2,5 ve üstünde sakinleştirme cümlesi istenir, cevap en fazla iki kısa cümle; ardından önce düşünür, sonra
+konuşucu (akış + derleme + 8 adım). Sesler ve demo sayfası: `demo/omni_demo/` (`demo.html`).
+
+| Adım | Süre |
+|---|---|
+| Ses tanıma (Whisper) | 0,38 sn |
+| Öfke ölçümü (emotion2vec+) | 0,03 sn |
+| Düşünür (cevabın yazılması) | 1,87 sn |
+| Düşünür başından ilk sese | 2,13 sn |
+| **Müşteri sustuktan sonra ilk ses** | **2,53 sn (medyan 2,44 / en çok 2,96)** |
+
+| Ölçüm | Değer |
+|---|---|
+| Ölçülen öfke ort. (0-4) | 1,23 |
+| Ölçülen öfke ile hedef öfke ilişkisi (Spearman) | 0,82 |
+| Gerçek zaman oranı / takılan cevap | 0,96 / 0 |
+| Ortalama kelime | 14,6 |
+| Empati/özür içeren cevap | %55 |
+| Not müşteriye sızdı | 0 |
+
+* Hat uçtan uca çalışıyor: müşteri sustuktan ~2,5 sn sonra ses başlıyor (sessizlik algısı hariç), hiçbir cevap
+  takılmadı, not sızmadı.
+* Canlı öfke ölçümü hedef öfkeyle güçlü ilişkili (0,82), ama bazı kızgın cümleleri kaçırıyor: "İndirim falanla
+  geçiştirme beni!" 0/4 aldı. Bu durumda not "sakin" gider ve cevap empatisiz kalabilir.
+* Empati %55, `omni_sirali`'deki %75'in altında: orada not hedef öfkeden yazılıyordu, burada ölçülen öfkeden.
+  Fark büyük ölçüde kaçırılan öfkeden geliyor; emotion2vec+ ince ayarı bunu doğrudan iyileştirir.
+* Not: cevap metinleri ve tur başına süreler Colab'da `omni_demo.jsonl` içinde (Drive
+  `DuyguAvcisi/s2s_baseline/`); depoya henüz alınmadı. Alınınca `python egitim/demo_sayfa.py demo/omni_demo
+  data/enjeksiyon_ses` sayfayı cevap metinleriyle yeniden üretir.
+
 ## Kaynaklar
 
 * [Real-Time Voice AI Hears but Does Not Listen (arXiv 2606.26083)](https://arxiv.org/abs/2606.26083)

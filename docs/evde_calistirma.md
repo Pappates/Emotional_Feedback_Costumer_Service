@@ -11,8 +11,9 @@ bağlamı verir.
 * Varılan kurulum (tek L4 GPU): öfkeyi emotion2vec+ ölçer, kullanıcı turuna metin notu olarak eklenir, cevap en
   fazla iki kısa cümle istenir; TR-Omni'nin düşünürü cevabı bitirince konuşucu akış + `torch.compile` + 8 difüzyon
   adımıyla seslendirir. İlk ses ~2,0 sn, ses kesilmiyor, empatik cevap %75. Toplantıda ~2 sn kabul edildi.
-* Hazır ama henüz çalıştırılmamış bölüm: `omni_demo` (uçtan uca tur: Whisper + emotion2vec+ ile canlı öfke ölçümü,
-  not, önce düşünür sonra konuşucu). Colab'da L4 bulunamadığı için çalışmadı.
+* `omni_demo` (uçtan uca tur) Colab L4'te çalıştı ve sunumda gösterildi: müşteri sustuktan sonra ilk ses 2,53 sn,
+  takılma yok, empati %55. Cevap ve müşteri sesleri GPU'suz oynatmak için `demo/omni_demo/demo.html`
+  (tarayıcıda aç). Ayrıntı bölüm 7'nin sonunda.
 
 ## Donanım şartı
 
@@ -56,7 +57,7 @@ Doğrudan Windows'ta derlemesiz yol çalışır ama daha yavaştır (L4'te gerç
 
 ## Sıradaki işler
 
-* `omni_demo`'yu çalıştırıp sonuçları bölüm 7'ye eklemek.
+* `omni_demo.jsonl`'i Drive'dan alıp demo sayfasına cevap metinlerini eklemek (`egitim/demo_sayfa.py`).
 * Mikrofonla canlı demo için küçük bir betik (henüz yok).
 * PR'ı açıp main'e almak.
 * TR-Omni'yi uygulamaya (`core/call.py`) bağlamak: GPU'lu bir sunucu kararı gerektirir.

@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duygu Avcısı Demo</title>
+<style>
+:root { --zemin:#f6f7f9; --kart:#fff; --yazi:#1d2330; --soluk:#5d6677; --cizgi:#e2e5ea;
+        --musteri:#fdf1ee; --asistan:#eef4fd; --vurgu:#e2001a; --sakin:#2f7d4f; }
+@media (prefers-color-scheme: dark) { :root { --zemin:#14171c; --kart:#1d2128; --yazi:#e8eaee; --soluk:#9aa3b2;
+        --cizgi:#2c313a; --musteri:#2b1f1d; --asistan:#1b2433; --sakin:#5cc488; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--zemin); color:var(--yazi);
+       font:16px/1.5 system-ui, "Segoe UI", sans-serif; }
+main { max-width:860px; margin:0 auto; padding:24px 16px 48px; }
+h1 { font-size:1.5rem; margin:0 0 4px; }
+.alt { color:var(--soluk); margin:0 0 20px; }
+.ozet { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:24px; }
+.kutu { background:var(--kart); border:1px solid var(--cizgi); border-radius:10px; padding:12px; }
+.kutu b { display:block; font-size:1.35rem; }
+.kutu span { color:var(--soluk); font-size:.85rem; }
+.kart { background:var(--kart); border:1px solid var(--cizgi); border-radius:12px; padding:14px; margin-bottom:14px; }
+.baslik { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+.kod { font-family:ui-monospace, Consolas, monospace; color:var(--soluk); font-size:.85rem; margin-right:auto; }
+.rozet { font-size:.8rem; padding:2px 8px; border-radius:99px; border:1px solid var(--cizgi); }
+.rozet.kizgin { color:var(--vurgu); border-color:var(--vurgu); }
+.rozet.sakin { color:var(--sakin); border-color:var(--sakin); }
+.satir { display:flex; gap:12px; padding:10px; border-radius:8px; margin-top:8px; }
+.musteri { background:var(--musteri); } .asistan { background:var(--asistan); }
+.kim { width:70px; flex:none; font-weight:600; font-size:.9rem; }
+.govde { flex:1; min-width:0; }
+.metin { margin:0 0 6px; }
+audio { width:100%; height:36px; }
+@media (max-width:520px) { .satir { flex-direction:column; gap:4px; } }
+</style></head>
+<body><main>
+<h1>Duygu Avcısı: sesten sese demo</h1>
+<p class="alt">TR-Omni-E4B + emotion2vec+. Müşteri sesinden öfke canlı ölçülür, cevaba not olarak eklenir, cevap
+kısa tutulur; önce düşünür, sonra konuşucu. NVIDIA L4, 20 sentetik müşteri tepkisi.</p>
+<section class="ozet">
+  <div class="kutu"><b>0.41 sn</b><span>öfke algısı (Whisper + emotion2vec+)</span></div>
+  <div class="kutu"><b>1.87 sn</b><span>cevabın yazılması</span></div>
+  <div class="kutu"><b>2.53 sn</b><span>müşteri sustuktan sonra ilk ses (en çok 2.96)</span></div>
+  <div class="kutu"><b>0</b><span>takılan cevap</span></div>
+  <div class="kutu"><b>%55</b><span>empatik cevap</span></div>
+</section>
+
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t0_neden</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">İki gündür internetim yok, tamam mı? İndirim falanla geçiştirme beni!</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t0_neden.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t0_neden.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t0_ofke</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">4 saat mi? İki gündür internetim kapalı! Bu ne demek, ciddi misiniz?</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t0_ofke.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t0_ofke.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t0_tam</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">İki gündür internetim yok! Sizden bu kadar uzun süre haber alamadım, ne yapacaksınız siz?!</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t0_tam.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t0_tam.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t0_yok</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Dört saat mi? İki gündür internetim kapalı! Bu ne biçim hizmet?</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t0_yok.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t0_yok.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t1_neden</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">240 TL mi? Ne demek istiyorsunuz? Ben o paketi almadım, bu kabul edilemez!</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t1_neden.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t1_neden.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t1_ofke</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">240 TL’lik ek paket ne demek? Ben o paketi almadım, ne zaman, nerede aldım? Bu saçmalık, hemen iptal edilmeli!</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t1_ofke.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t1_ofke.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t1_tam</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Tamam, iade mi? Peki, o 240 TL’yi ne zaman göreceğim? Bir de bu hatayı kim yaptı, hesap sorulacak mı?</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t1_tam.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t1_tam.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g0_t1_yok</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Tamam, tamam! 240 TL’lik ek paket neyin nesi? Ben o paketi almadım, silin o ücreti faturamdan ACIMASIZCA!</p>
+      <audio controls preload="none" src="musteri/ahmet_g0_t1_yok.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g0_t1_yok.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g1_t0_neden</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">İki gündür internetim yok! Ne yapacaksın sen? 4 saat mi bekleyeceğim ben?</p>
+      <audio controls preload="none" src="musteri/ahmet_g1_t0_neden.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g1_t0_neden.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g1_t0_ofke</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Dört saat mi? İki gündür internetim yok, ne yapacaksınız siz?! Bu kadar mı zor?</p>
+      <audio controls preload="none" src="musteri/ahmet_g1_t0_ofke.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g1_t0_ofke.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g1_t0_tam</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">İki gündür mü? Ne demek iki gündür? Modem ışıklarını görmedim, internet yok!</p>
+      <audio controls preload="none" src="musteri/ahmet_g1_t0_tam.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g1_t0_tam.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">ahmet_g1_t0_yok</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Dört saat mi? İki gündür internetim yok, bu kadar basit! Ne yapacaksınız siz şimdi?!</p>
+      <audio controls preload="none" src="musteri/ahmet_g1_t0_yok.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="ahmet_g1_t0_yok.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g0_t0_neden</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">İndirim mi? Bu benim için çözüm değil. Akşam saatlerinde internetim neden böyle düşüyor, bunu kimse bana söylemedi.</p>
+      <audio controls preload="none" src="musteri/mert_g0_t0_neden.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g0_t0_neden.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g0_t0_ofke</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">%30 indirim mi? 50 GB veri mi? Bu da neyin nesi?</p>
+      <audio controls preload="none" src="musteri/mert_g0_t0_ofke.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g0_t0_ofke.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g0_t0_tam</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">Yani, 30’luk indirim ve 50 GB veriyle mi bu sorunu çözeceksiniz? Benim toplantılarım da para tuzağı değil ki.</p>
+      <audio controls preload="none" src="musteri/mert_g0_t0_tam.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g0_t0_tam.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g0_t0_yok</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">5-10 Mbps mi? Siz ciddi misiniz? Ben yazılım geliştiriyorum, bu hızla hiç bir şey yapılamaz.</p>
+      <audio controls preload="none" src="musteri/mert_g0_t0_yok.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g0_t0_yok.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g1_t0_neden</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">4 saat mi? Yani, bu akşamki toplantım da var. Bu kadar uzun sürecek bir inceleme ne demek?</p>
+      <audio controls preload="none" src="musteri/mert_g1_t0_neden.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g1_t0_neden.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g1_t0_ofke</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">4 saat mi? Bu kadar mı sürer? Benim de zamanım var, bu da ciddiye alınması gereken bir sorun.</p>
+      <audio controls preload="none" src="musteri/mert_g1_t0_ofke.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g1_t0_ofke.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g1_t0_tam</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">4 saat mi? Bu da neyin nesi? Ben zaten toplantılarıma yetişemiyorum, bu kadar uzun süre beklemek de mümkün değil.</p>
+      <audio controls preload="none" src="musteri/mert_g1_t0_tam.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g1_t0_tam.wav"></audio></div>
+  </div>
+</article>
+<article class="kart">
+  <div class="baslik"><span class="kod">mert_g1_t0_yok</span></div>
+  <div class="satir musteri">
+    <div class="kim">Müşteri</div>
+    <div class="govde"><p class="metin">4 saat mi? Bu kadar mı sürer? Ben yazılım derken, internetimde de sorun yaşıyorum, biraz daha hızlı bir çözüm beklerdim.</p>
+      <audio controls preload="none" src="musteri/mert_g1_t0_yok.wav"></audio></div>
+  </div>
+  <div class="satir asistan">
+    <div class="kim">Asistan</div>
+    <div class="govde">
+      <audio controls preload="none" src="mert_g1_t0_yok.wav"></audio></div>
+  </div>
+</article>
+</main></body></html>

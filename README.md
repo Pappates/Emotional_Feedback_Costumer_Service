@@ -382,6 +382,9 @@ olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim
   * Önce düşünür sonra konuşucu (GPU paylaşılmadan): öfke notu + "en fazla iki kısa cümle" ile ilk ses ~2,0 sn,
     ses kesilmiyor, empati %75. Tek L4 için önerilen kurulum bu.
   * Enjeksiyon çalışıyor: öfkeli notta empati %40'tan %85'e çıkıyor, cevaplar kısalıyor.
+  * Uçtan uca demo (`omni_demo`, 26.11.2026): Whisper + emotion2vec+ ile canlı öfke ölçümü, not, kısa cevap, önce
+    düşünür sonra konuşucu. Müşteri sustuktan sonra ilk ses 2,53 sn (en çok 2,96), takılma yok, empati %55
+    (bazı kızgın cümleler kaçırılıyor). Sesler ve sayfa: `demo/omni_demo/demo.html`.
     Ayrıntı: `docs/sesten_sese_saha_arastirmasi.md` bölüm 7.
 
 ## Kota, yedek modeller ve kayıt (ÖNEMLİ)

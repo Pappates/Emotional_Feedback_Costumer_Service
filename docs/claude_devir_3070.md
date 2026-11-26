@@ -47,9 +47,11 @@ Ayrıntı: `docs/sesten_sese_saha_arastirmasi.md` bölüm 7; sayılar: `egitim/s
   3,68 (kabul), 4 adım 2,83 (bozuk). Önerilen: akış + derleme + 8 adım.
 * **Önce düşünür, sonra konuşucu (`omni_sirali`):** öfke notu + "en fazla iki kısa cümle" ile ilk ses ortalama
   **2,0 sn**, takılma yok, empati %75, sızıntı yok. **Toplantıda ~2 sn kabul edildi.** Önerilen kurulum bu.
-* **Uçtan uca demo (`omni_demo`):** kod hazır ve stub testinden geçti, ama Colab'da L4 bulunamadığı için hiç
-  çalışmadı. Whisper + emotion2vec+ ile canlı öfke ölçümü (`core/psych.anger_score`) → not + kısa cevap →
-  önce düşünür sonra konuşucu; adım süreleri ve `demo_ses/` altında cevap sesleri.
+* **Uçtan uca demo (`omni_demo`, 26.11.2026, Colab L4):** Whisper + emotion2vec+ ile canlı öfke ölçümü
+  (`core/psych.anger_score`) → not + kısa cevap → önce düşünür sonra konuşucu. Müşteri sustuktan sonra ilk ses
+  2,53 sn (medyan 2,44, en çok 2,96), takılma yok, sızıntı yok, empati %55, öfke Spearman 0,82. Bazı kızgın
+  cümleler 0/4 ölçülüyor ("İndirim falanla geçiştirme beni!"). Sesler ve sayfa `demo/omni_demo/`; cevap
+  metinleri `omni_demo.jsonl` Drive'da (`DuyguAvcisi/s2s_baseline/`), depoda yok.
 
 ---
 
@@ -148,7 +150,7 @@ ayar şimdilik gerekmiyor; öfke notu yaklaşımı çalışıyor.
 
 ## 5. Açık işler
 
-* `omni_demo`'yu bir kez çalıştırmak (3070'te ya da Colab L4'te).
+* `omni_demo.jsonl`'i Drive'dan `demo/omni_demo/` altına alıp `egitim/demo_sayfa.py` ile sayfayı cevap metinleriyle yeniden üretmek.
 * TR-Omni'yi 3070'e sığdırma denemesi (bölüm 3).
 * PR: `asama2/s2s-baseline` → main. Şirket bilgisayarında `gh` kurulu değil, panelde GitHub oturumu yoktu.
 * emotion2vec+ ince ayar betiği ve eğitimi (bölüm 4).
