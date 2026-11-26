@@ -57,7 +57,6 @@ Doğrudan Windows'ta derlemesiz yol çalışır ama daha yavaştır (L4'te gerç
 
 ## Sıradaki işler
 
-* `omni_demo.jsonl`'i Drive'dan alıp demo sayfasına cevap metinlerini eklemek (`egitim/demo_sayfa.py`).
 * Mikrofonla canlı demo için küçük bir betik (henüz yok).
 * PR'ı açıp main'e almak.
 * TR-Omni'yi uygulamaya (`core/call.py`) bağlamak: GPU'lu bir sunucu kararı gerektirir.

@@ -255,9 +255,8 @@ konuşucu (akış + derleme + 8 adım). Sesler ve demo sayfası: `demo/omni_demo
   geçiştirme beni!" 0/4 aldı. Bu durumda not "sakin" gider ve cevap empatisiz kalabilir.
 * Empati %55, `omni_sirali`'deki %75'in altında: orada not hedef öfkeden yazılıyordu, burada ölçülen öfkeden.
   Fark büyük ölçüde kaçırılan öfkeden geliyor; emotion2vec+ ince ayarı bunu doğrudan iyileştirir.
-* Not: cevap metinleri ve tur başına süreler Colab'da `omni_demo.jsonl` içinde (Drive
-  `DuyguAvcisi/s2s_baseline/`); depoya henüz alınmadı. Alınınca `python egitim/demo_sayfa.py demo/omni_demo
-  data/enjeksiyon_ses` sayfayı cevap metinleriyle yeniden üretir.
+* Cevap metinleri ve tur başına süreler: `demo/omni_demo/omni_demo.jsonl`. Sayfayı yeniden üretmek için:
+  `python egitim/demo_sayfa.py demo/omni_demo data/enjeksiyon_ses`.
 
 ## Kaynaklar
 
