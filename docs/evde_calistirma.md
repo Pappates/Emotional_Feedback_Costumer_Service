@@ -21,7 +21,7 @@ TR-Omni-E4B bf16 hâliyle ~17 GB GPU belleği ister (düşünür + konuşucu bir
 | GPU | Bellek | Durum |
 |---|---|---|
 | RTX 3090 / 4090 / 5090, L4, A100 | 22-80 GB | Çalışır |
-| RTX 3070 Ti | 8 GB | **Sığmaz.** Düşünürü 4-bit'e indirmek bile tahminen ~9-10 GB eder; denenmedi |
+| RTX 3070 / 3070 Ti | 8 GB | **Olduğu gibi sığmaz.** Nicemlemeyle sığdırma planı: `docs/claude_devir_3070.md` |
 | CPU | - | Pratik değil: cevap başına tahminen 1-2 dk (ölçülmedi) |
 
 8 GB'lık bir kartla seçenekler:
