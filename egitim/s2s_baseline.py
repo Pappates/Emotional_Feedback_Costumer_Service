@@ -36,6 +36,10 @@ Bölümler (her biri ayrı .jsonl dosyasına satır satır yazılır; Colab kopa
               konuşucu (akış + derleme + 8 adım) cümle cümle seslendirir. ilk_ses = düşünürün toplam süresi + ilk ses
               parçası. takilma: ses parçaları çalma sırasına yetişmediğinde dinleyicinin beklediği toplam süre.
               Üç koşul (SIRALI): yok | ofkeli (omni_enjeksiyon notu) | ofkeli_kisa (+ en fazla iki kısa cümle).
+  omni_demo   Uçtan uca tek tur, önerilen kurulumla: müşteri sesi -> Whisper dökümü + emotion2vec+ -> öfke düzeyi
+              (core/psych.anger_score, uygulamadaki hesap) -> öfke notu + kısa cevap talimatı -> önce düşünür, sonra
+              konuşucu. Notun sabit değil canlı ölçümden geldiği tek bölüm. Her adımın süresi ve cevap sesleri
+              (demo_ses/) saklanır.
 
 Kullanım (Colab, L4 veya A100; TR-Omni ~17 GB GPU belleği ister, T4 yetmez):
   python egitim/s2s_baseline.py --turev "<TurEV Sound Source>" --model <TR-Omni klasörü> \
@@ -72,7 +76,7 @@ PROMPT_DUYGU = ("Bu kaydı yalnızca ses tonuna göre değerlendir, sözlerin an
 PROMPT_OFKE = ("Bu müşterinin sesindeki ve sözlerindeki öfkeyi 0 ile 4 arasında puanla. 0 hiç öfkeli değil, "
                "4 çok öfkeli. Yalnızca tek bir rakam yaz.")
 BOLUMLER = ["e2v_algi", "omni_algi", "omni_ofke", "omni_sohbet", "omni_gecikme", "omni_enjeksiyon", "omni_kalite",
-            "omni_konusucu", "omni_mos", "omni_sirali"]
+            "omni_konusucu", "omni_mos", "omni_sirali", "omni_demo"]
 DUSUK_MOS = 3.0   # UTMOS tahmini bunun altındaysa ses "düşük kaliteli" sayılır (1-5 ölçeği)
 # omni_kalite ayarları: (derleme, akış, difüzyon adımı: None = model ayarı, "yarim" = yarısı). Sıra önemli: derleme
 # geri alınamaz. akissiz = TR-Omni'nin kendi Talker.speak yolu. Aynı tohumla akışlı ve akışsız yol aynı gizli sesi
@@ -91,9 +95,10 @@ KOSULLAR = {"yok": None,
             "sakin": NOT + "Müşterinin öfkesi: 0,5/4 (sakin), aynı.",
             "ofkeli": NOT + "Müşterinin öfkesi: 3,5/4 (çok öfkeli), yükseliyor. "
                             "Önce öfkeyi yatıştır: kısa cümle, savunmaya geçme, somut adım."}
+KISA = " Cevabın en fazla iki kısa cümle olsun."
 # omni_sirali koşulları: kullanıcı turuna eklenen metin
 SIRALI = {"yok": None, "ofkeli": KOSULLAR["ofkeli"],
-          "ofkeli_kisa": KOSULLAR["ofkeli"] + " Cevabın en fazla iki kısa cümle olsun."}
+          "ofkeli_kisa": KOSULLAR["ofkeli"] + KISA}
 SIRALI_ADIM = 8   # omni_kalite/omni_mos'a göre en iyi ayar: akış + derleme + 8 adım
 TAKILMA_ESIK = 0.1   # bundan uzun toplam bekleme "takılmalı" sayılır (sn)
 TON_RE = re.compile(r"^\s*\[\s*ton\s*:\s*([^\]]*)\]\s*")
@@ -361,8 +366,9 @@ def takilma(olay: list[tuple[float, int]], sr: int) -> float:
     return bekleme
 
 
-def sirali(o, audio: np.ndarray, text: str | None, timesteps: int) -> dict:
-    """Önce düşünür cevabın tamamını üretir, sonra konuşucu cümle cümle akışla seslendirir (GPU paylaşılmaz)."""
+def sirali(o, audio: np.ndarray, text: str | None, timesteps: int, sesler: list | None = None) -> dict:
+    """Önce düşünür cevabın tamamını üretir, sonra konuşucu cümle cümle akışla seslendirir (GPU paylaşılmaz).
+    sesler verilirse her cümlenin sesi eklenir."""
     T = sys.modules["tr_omni"]
     from tr_speak import speakable, split_sentences
     system, content = omni_turn(audio, text)
@@ -379,7 +385,9 @@ def sirali(o, audio: np.ndarray, text: str | None, timesteps: int) -> dict:
         if not re.search(r"\w", t):
             continue
         st, goffs = o.thinker.states(ctx, " ".join(said), t)
-        speak_akis(o.talker, t, st, goffs, timesteps, olay=olay)
+        wav, _, _ = speak_akis(o.talker, t, st, goffs, timesteps, olay=olay)
+        if sesler is not None:
+            sesler.append(wav)
         said.append(t)
     bitti = time.time()
     ses = sum(n for _, n in olay) / o.sr
@@ -390,6 +398,26 @@ def sirali(o, audio: np.ndarray, text: str | None, timesteps: int) -> dict:
             "rtf": round(konusucu_sure / ses, 3) if ses else None,
             "takilma": round(takilma(olay, o.sr), 2), "empati": bool(EMPATHY.search(cevap)),
             "sizinti": bool(SIZINTI.search(tr_lower(cevap)))}
+
+
+def ofke_notu(x16: np.ndarray) -> dict:
+    """Uygulamadaki öfke hesabı (core/psych.anger_score): Whisper dökümünden metin ipuçları, emotion2vec+ olasılıkları
+    ses kapısı. Metin duygu modeli Colab'da yok; valens 0 alınır, yalnızca ipuçları sayılır. Not core/call.py
+    _psych_hint biçiminde (tek tur: yön "aynı") + kısa cevap talimatı."""
+    from core.psych import anger_score
+    t0 = time.time()
+    dokum = asr(x16)
+    t1 = time.time()
+    sc = e2v(x16)
+    t2 = time.time()
+    of = anger_score({"transkript": dokum, "lokal_ayrinti": {"valens_metin": 0.0, "ses_modeli": {"olasiliklar": sc}}})
+    lvl = of["duzey"]
+    not_ = NOT + f"Müşterinin öfkesi: {lvl:.1f}".replace(".", ",") + f"/4 ({of['ad']}), aynı."
+    if lvl >= 2.5:
+        not_ += " Önce öfkeyi yatıştır: kısa cümle, savunmaya geçme, somut adım."
+    return {"dokum": dokum, "ses_duygu": max(sc, key=sc.get), "ofke": lvl, "ofke_ad": of["ad"],
+            "ofke_ses": of["ses"], "ofke_metin": of["metin"], "not": not_ + KISA,
+            "asr_sure": round(t1 - t0, 2), "e2v_sure": round(t2 - t1, 2)}
 
 
 def kalite_sentez(o, audio: np.ndarray, cevap: str, akis: bool, timesteps: int) -> list[tuple[str, np.ndarray, float]]:
@@ -669,6 +697,32 @@ def main():
                 print(f"omni_sirali {gpu} {k} {m['anahtar']}: düşünür {r['dusunur']} sn, ilk ses {r['ilk_ses']} sn, "
                       f"rtf {r['rtf']}, takılma {r['takilma']} sn, {r['kelime']} kelime", flush=True)
 
+    if "omni_demo" in a.bolum:
+        import torch
+        gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+        kalan = [m for m in musteri if f"{gpu}|{m['anahtar']}" not in R["omni_demo"].done]
+        if kalan:
+            o = omni(a.model)
+            if not hasattr(o.talker.m, "_feat_encoder_raw"):
+                o.talker.m.optimize()
+            (out / "demo_ses").mkdir(exist_ok=True)
+            for m in kalan[:2]:                                # ısınma: Whisper, emotion2vec, derleme ölçüme girmesin
+                x16 = load16(m["wav"])
+                sirali(o, x16, ofke_notu(x16)["not"], SIRALI_ADIM)
+            for m in kalan:
+                x16 = load16(m["wav"])
+                n = ofke_notu(x16)
+                sesler = []
+                r = sirali(o, x16, n["not"], SIRALI_ADIM, sesler)
+                if sesler:
+                    sf.write(out / "demo_ses" / f"{m['anahtar']}.wav", np.concatenate(sesler), o.sr, subtype="PCM_16")
+                algi = round(n["asr_sure"] + n["e2v_sure"], 2)
+                R["omni_demo"].add({"anahtar": f"{gpu}|{m['anahtar']}", "gpu": gpu, "tepki": m["anahtar"],
+                                    "musteri": m["tepki"], "olculen_ofke": m["ses_ofke"], **n, **r, "algi": algi,
+                                    "toplam_ilk_ses": round(algi + r["ilk_ses"], 2) if r["ilk_ses"] is not None else None})
+                print(f"omni_demo {gpu} {m['anahtar']}: öfke {n['ofke']} ({n['ofke_ad']}), algı {algi} sn, "
+                      f"ilk ses {r['ilk_ses']} sn, takılma {r['takilma']} sn: {r['cevap'][:60]!r}", flush=True)
+
     ozet = {}
     rows = R["e2v_algi"].rows
     if rows:
@@ -786,6 +840,25 @@ def main():
                     "takilmali": sum(r["takilma"] > TAKILMA_ESIK for r in g),
                     "kelime_ort": float(np.mean([r["kelime"] for r in g])),
                     "empati_orani": float(np.mean([r["empati"] for r in g])), "sizinti": sum(r["sizinti"] for r in g)}
+    rows = R["omni_demo"].rows
+    if rows:
+        ozet["omni_demo"] = {}
+        for gpu in sorted({r["gpu"] for r in rows}):
+            g = [r for r in rows if r["gpu"] == gpu and r["toplam_ilk_ses"] is not None]
+            if not g:
+                continue
+            ti = [r["toplam_ilk_ses"] for r in g]
+            ozet["omni_demo"][gpu] = {
+                "n": len(g), "ofke_ort": float(np.mean([r["ofke"] for r in g])),
+                "ofke_spearman_olculen": spearman([r["ofke"] for r in g], [r["olculen_ofke"] for r in g]),
+                "asr_ort": float(np.mean([r["asr_sure"] for r in g])), "e2v_ort": float(np.mean([r["e2v_sure"] for r in g])),
+                "dusunur_ort": float(np.mean([r["dusunur"] for r in g])),
+                "ilk_ses_ort": float(np.mean([r["ilk_ses"] for r in g])),
+                "toplam_ilk_ses_ort": float(np.mean(ti)), "toplam_ilk_ses_medyan": float(np.median(ti)),
+                "toplam_ilk_ses_max": float(np.max(ti)), "rtf_ort": float(np.mean([r["rtf"] for r in g])),
+                "takilmali": sum(r["takilma"] > TAKILMA_ESIK for r in g),
+                "kelime_ort": float(np.mean([r["kelime"] for r in g])),
+                "empati_orani": float(np.mean([r["empati"] for r in g])), "sizinti": sum(r["sizinti"] for r in g)}
     json.dump(ozet, open(out / "ozet.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps(ozet, ensure_ascii=False, indent=1))
 
