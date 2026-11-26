@@ -196,6 +196,21 @@ Hız ölçümündeki ilk cümleler (ayar başına 5) ayrıca puanlandı: 16 adı
 * Önerilen ayar: akış + derleme + 8 adım. Hız sorunu (GPU paylaşımında oran 1,11) bununla çözülmüyor.
 * UTMOS İngilizce konuşmayla eğitilmiş; Türkçede mutlak puan kaba, ayarlar arası kıyas güvenilir.
 
+**Önce düşünür, sonra konuşucu (L4, 20 müşteri × 3 koşul, `omni_sirali`).** Düşünür cevabın tamamını üretir, ardından
+konuşucu akış + derleme + 8 adımla seslendirir; GPU aynı anda paylaşılmaz. Takılma: ses parçaları çalmaya
+yetişmediğinde dinleyicinin beklediği süre.
+
+| Koşul | Düşünür | İlk ses ort. (medyan / en çok) | Oran | Takılma | Kelime | Empati |
+|---|---|---|---|---|---|---|
+| Not yok | 2,79 sn | 3,08 sn (2,80 / 6,82) | 0,96 | 0 | 24,3 | %25 |
+| Öfke notu | 2,07 sn | 2,35 sn (2,36 / 3,00) | 0,96 | 0 | 17,2 | %65 |
+| Öfke notu + "en fazla iki kısa cümle" | 1,73 sn | **2,01 sn (1,98 / 2,44)** | 0,97 | ~0 | 12,8 | %75 |
+
+* GPU paylaşılmayınca konuşucu gerçek zamana yetişiyor: 60 cevabın hiçbirinde ses kesilmedi.
+* Kısa cevap talimatı ilk sesi ~2 sn'ye indiriyor ve empatiyi düşürmüyor (%65 → %75); sızıntı yok.
+* Sonuç: tek L4'te çalışan kurulum öfke notu + kısa cevap + akış + derleme + 8 adım; ilk ses ~2 sn (ses tanıma ve
+  sessizlik algısı hariç). 1,5 sn'nin altı gerekirse iki GPU ya da daha hızlı bir Türkçe TTS gerekir.
+
 **Enjeksiyon (L4, 20 müşteri × 3 koşul, `omni_enjeksiyon`).** Öfke bilgisi kullanıcı turuna metin olarak
 verildi (`core/call.py` biçimi):
 

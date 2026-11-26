@@ -234,5 +234,49 @@
    }
   },
   "not": "UTMOS (utmos22_strong, 1-5) İngilizce konuşmayla eğitilmiş; mutlak değerler Türkçede kaba, ayarlar arası kıyas güvenilir."
+ },
+ "omni_sirali": {
+  "NVIDIA L4": {
+   "yok": {
+    "n": 20,
+    "dusunur_ort": 2.79,
+    "ilk_ses_ort": 3.08,
+    "ilk_ses_medyan": 2.8,
+    "ilk_ses_max": 6.82,
+    "rtf_ort": 0.957,
+    "takilma_ort": 0.0,
+    "takilmali": 0,
+    "kelime_ort": 24.25,
+    "empati_orani": 0.25,
+    "sizinti": 0
+   },
+   "ofkeli": {
+    "n": 20,
+    "dusunur_ort": 2.07,
+    "ilk_ses_ort": 2.35,
+    "ilk_ses_medyan": 2.36,
+    "ilk_ses_max": 3.0,
+    "rtf_ort": 0.964,
+    "takilma_ort": 0.0,
+    "takilmali": 0,
+    "kelime_ort": 17.15,
+    "empati_orani": 0.65,
+    "sizinti": 0
+   },
+   "ofkeli_kisa": {
+    "n": 20,
+    "dusunur_ort": 1.73,
+    "ilk_ses_ort": 2.01,
+    "ilk_ses_medyan": 1.98,
+    "ilk_ses_max": 2.44,
+    "rtf_ort": 0.97,
+    "takilma_ort": 0.005,
+    "takilmali": 0,
+    "kelime_ort": 12.8,
+    "empati_orani": 0.75,
+    "sizinti": 0
+   }
+  },
+  "not": "Önce düşünür cevabın tamamını üretir, sonra konuşucu akış + derleme + 8 adımla seslendirir; GPU paylaşılmaz. Ölçüm 26.11.2026."
  }
 }

@@ -379,6 +379,8 @@ olarak **emotion2vec+ base** ile sürer. Çağrı kaydı olmadığından eğitim
     düşünür sonra konuşucu, iki GPU, ya da daha hızlı bir Türkçe TTS.
   * Ses kalitesi: akış ve derleme sesi bozmuyor (UTMOS 3,71-3,77, Whisper ile 45 cümlenin hiçbiri bozuk değil).
     8 difüzyon adımı çok az düşürüyor (3,68), 4 adım belirgin bozuyor (2,83). Önerilen: akış + derleme + 8 adım.
+  * Önce düşünür sonra konuşucu (GPU paylaşılmadan): öfke notu + "en fazla iki kısa cümle" ile ilk ses ~2,0 sn,
+    ses kesilmiyor, empati %75. Tek L4 için önerilen kurulum bu.
   * Enjeksiyon çalışıyor: öfkeli notta empati %40'tan %85'e çıkıyor, cevaplar kısalıyor.
     Ayrıntı: `docs/sesten_sese_saha_arastirmasi.md` bölüm 7.
 
